@@ -14,6 +14,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Demo feed so the full pipeline works before API keys are added
 - Automated tests
 - Live execution deliberately disabled
+- Optional Live Data V3 scanner using DEX Screener discovery and Helius on-chain checks
 
 ## Quick start
 
@@ -26,6 +27,8 @@ python -m unittest discover -s commander_bot/tests -v
 Set the environment variables shown in `.env.example` in the hosting dashboard. Never paste bot tokens or wallet private keys into Telegram or source code. Send `/start` to the bot after the control service starts.
 
 The control buttons currently operate the safe demo/paper pipeline. `Automatic` records the selected mode; scheduled peak-time jobs are connected during deployment. Manual sessions automatically declare a 60-minute expiry and will be wired to live data only after data adapters and safety tests are complete.
+
+Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
 
 ## Safety gates
 

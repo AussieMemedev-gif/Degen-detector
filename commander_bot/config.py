@@ -10,6 +10,10 @@ def _int(name: str, default: int) -> int:
     return int(os.getenv(name, str(default)))
 
 
+def _bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_display_name: str = os.getenv("BOT_DISPLAY_NAME", "Degen Detector")
@@ -24,3 +28,6 @@ class Settings:
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     telegram_poll_seconds: int = _int("TELEGRAM_POLL_SECONDS", 20)
     manual_session_minutes: int = _int("MANUAL_SESSION_MINUTES", 60)
+    helius_api_key: str = os.getenv("HELIUS_API_KEY", "")
+    live_data_enabled: bool = _bool("LIVE_DATA_ENABLED", False)
+    live_candidate_limit: int = _int("LIVE_CANDIDATE_LIMIT", 8)

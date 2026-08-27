@@ -11,7 +11,7 @@ def demo_candidate() -> TokenSnapshot:
     return TokenSnapshot(
         mint="DEMO_MINT_NOT_FOR_TRADING", symbol="DEMO", price_usd=0.00042,
         liquidity_usd=61_000, volume_5m_usd=29_000, volume_change_pct=120,
-        unique_buyers_5m=58, buy_sell_ratio=1.9, top10_holder_pct=24,
+        buys_5m=58, buy_sell_ratio=1.9, top10_holder_pct=24,
         mint_authority_active=False, freeze_authority_active=False, sellable=True,
         estimated_slippage_pct=1.2, social_mentions_15m=310, social_velocity_pct=145,
         trusted_kol_mentions=2, price_change_5m_pct=7.5, price_change_1h_pct=21,
@@ -20,6 +20,9 @@ def demo_candidate() -> TokenSnapshot:
 
 
 def run_once(settings: Settings) -> str:
+    if settings.live_data_enabled:
+        from .live_data import run_live_scan
+        return run_live_scan(settings)
     agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
     decision = ChiefCommander(agents, settings).decide(demo_candidate())
     Ledger(settings.database_path).record(demo_candidate(), decision)

@@ -11,7 +11,7 @@ class TokenSnapshot:
     liquidity_usd: float
     volume_5m_usd: float
     volume_change_pct: float
-    unique_buyers_5m: int
+    buys_5m: int
     buy_sell_ratio: float
     top10_holder_pct: float
     mint_authority_active: bool
@@ -24,6 +24,7 @@ class TokenSnapshot:
     price_change_5m_pct: float
     price_change_1h_pct: float
     pool_age_minutes: int
+    social_data_available: bool = True
     observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -46,4 +47,3 @@ class CommanderDecision:
     vetoes: List[str]
     reports: Dict[str, AgentReport]
     paper_position_usd: float = 0.0
-

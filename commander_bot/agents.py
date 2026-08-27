@@ -10,6 +10,8 @@ class SocialAlphaAgent:
     name = "social"
 
     def analyse(self, token: TokenSnapshot) -> AgentReport:
+        if not token.social_data_available:
+            return AgentReport(self.name, 0.0, "low", ["social/KOL feed not connected in Live Data V3"])
         score = min(token.social_mentions_15m / 5, 35)
         score += min(max(token.social_velocity_pct, 0) / 4, 35)
         score += min(token.trusted_kol_mentions * 10, 30)
@@ -25,9 +27,9 @@ class OnChainScoutAgent:
     def analyse(self, token: TokenSnapshot) -> AgentReport:
         score = min(token.liquidity_usd / 1_500, 30)
         score += min(token.volume_5m_usd / 1_000, 25)
-        score += min(token.unique_buyers_5m / 2, 25)
+        score += min(token.buys_5m / 2, 25)
         score += min(max(token.buy_sell_ratio - 1, 0) * 10, 20)
-        reasons = [f"liquidity ${token.liquidity_usd:,.0f}", f"{token.unique_buyers_5m} unique buyers/5m", f"buy/sell ratio {token.buy_sell_ratio:.2f}"]
+        reasons = [f"liquidity ${token.liquidity_usd:,.0f}", f"{token.buys_5m} buy transactions/5m", f"buy/sell ratio {token.buy_sell_ratio:.2f}"]
         return AgentReport(self.name, clamp(score), "high" if score >= 75 else "medium", reasons)
 
 
@@ -68,4 +70,3 @@ class RiskSecurityAgent:
         score = 100 - concentration_penalty - slippage_penalty - len(vetoes) * 20
         reasons = [f"top-10 holders {token.top10_holder_pct:.1f}%", f"estimated slippage {token.estimated_slippage_pct:.2f}%"]
         return AgentReport(self.name, clamp(score), "high" if not vetoes else "low", reasons, vetoes)
-

@@ -7,6 +7,7 @@ from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
+from commander_bot.live_data import snapshot_from_pair
 
 
 class CommanderTests(unittest.TestCase):
@@ -43,6 +44,19 @@ class CommanderTests(unittest.TestCase):
             self.assertIn("PAPER ONLY", restarted.status_message())
             restarted.handle("emergency_stop")
             self.assertEqual(restarted.mode, "EMERGENCY_STOP")
+
+    def test_live_pair_mapping_uses_real_pair_fields_and_no_fake_social_data(self):
+        pair = {
+            "baseToken": {"symbol": "LIVE"}, "priceUsd": "0.01",
+            "liquidity": {"usd": 50000}, "volume": {"m5": 12000, "h1": 60000},
+            "txns": {"m5": {"buys": 40, "sells": 20}},
+            "priceChange": {"m5": 4, "h1": 12}, "pairCreatedAt": 1_700_000_000_000,
+        }
+        risk = {"top10_holder_pct": 20, "mint_authority_active": False, "freeze_authority_active": False}
+        token = snapshot_from_pair("mint", pair, risk)
+        self.assertEqual(token.buys_5m, 40)
+        self.assertEqual(token.buy_sell_ratio, 2)
+        self.assertFalse(token.social_data_available)
 
 
 if __name__ == "__main__":
