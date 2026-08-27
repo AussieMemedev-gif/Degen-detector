@@ -11,6 +11,8 @@ class Ledger:
             id INTEGER PRIMARY KEY, observed_at TEXT NOT NULL, mint TEXT NOT NULL,
             symbol TEXT NOT NULL, score REAL NOT NULL, status TEXT NOT NULL,
             snapshot_json TEXT NOT NULL, decision_json TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS bot_state (
+            key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -23,3 +25,16 @@ class Ledger:
         )
         self.connection.commit()
 
+    def get_state(self, key: str, default: str = "") -> str:
+        row = self.connection.execute(
+            "SELECT value FROM bot_state WHERE key = ?", (key,)
+        ).fetchone()
+        return row[0] if row else default
+
+    def set_state(self, key: str, value: str) -> None:
+        self.connection.execute(
+            "INSERT INTO bot_state(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+        self.connection.commit()

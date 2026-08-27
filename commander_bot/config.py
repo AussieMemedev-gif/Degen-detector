@@ -6,6 +6,10 @@ def _float(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
 
 
+def _int(name: str, default: int) -> int:
+    return int(os.getenv(name, str(default)))
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_display_name: str = os.getenv("BOT_DISPLAY_NAME", "Degen Detector")
@@ -18,3 +22,5 @@ class Settings:
     paper_position_usd: float = _float("PAPER_POSITION_USD", 25)
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    telegram_poll_seconds: int = _int("TELEGRAM_POLL_SECONDS", 20)
+    manual_session_minutes: int = _int("MANUAL_SESSION_MINUTES", 60)

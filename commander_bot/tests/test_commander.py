@@ -6,6 +6,7 @@ from commander_bot.commander import ChiefCommander
 from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
+from commander_bot.control import BotController
 
 
 class CommanderTests(unittest.TestCase):
@@ -31,6 +32,17 @@ class CommanderTests(unittest.TestCase):
         ledger.record(token, self.commander.decide(token))
         count = ledger.connection.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
         self.assertEqual(count, 1)
+
+    def test_control_modes_are_persistent_and_paper_only(self):
+        with tempfile.NamedTemporaryFile() as database:
+            settings = Settings(database_path=database.name, manual_session_minutes=30)
+            controller = BotController(settings)
+            self.assertIn("Manual mode enabled", controller.handle("manual_on"))
+            restarted = BotController(settings)
+            self.assertEqual(restarted.mode, "MANUAL")
+            self.assertIn("PAPER ONLY", restarted.status_message())
+            restarted.handle("emergency_stop")
+            self.assertEqual(restarted.mode, "EMERGENCY_STOP")
 
 
 if __name__ == "__main__":

@@ -31,8 +31,14 @@ def run_once(settings: Settings) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Degen Detector paper-trading MVP")
     parser.add_argument("--once", action="store_true", help="Run one demo analysis")
-    parser.parse_args()
-    print(run_once(Settings()))
+    parser.add_argument("--controls", action="store_true", help="Run Telegram control menu")
+    args = parser.parse_args()
+    settings = Settings()
+    if args.controls:
+        from .control import run_control_bot
+        run_control_bot(settings)
+    else:
+        print(run_once(settings))
 
 
 if __name__ == "__main__":
