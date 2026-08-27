@@ -8,6 +8,7 @@ from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
 from commander_bot.live_data import snapshot_from_pair
+from commander_bot.notifications import format_live_alert
 
 
 class CommanderTests(unittest.TestCase):
@@ -51,12 +52,29 @@ class CommanderTests(unittest.TestCase):
             "liquidity": {"usd": 50000}, "volume": {"m5": 12000, "h1": 60000},
             "txns": {"m5": {"buys": 40, "sells": 20}},
             "priceChange": {"m5": 4, "h1": 12}, "pairCreatedAt": 1_700_000_000_000,
+            "url": "https://dexscreener.com/solana/pair", "dexId": "raydium",
         }
         risk = {"top10_holder_pct": 20, "mint_authority_active": False, "freeze_authority_active": False}
         token = snapshot_from_pair("mint", pair, risk)
         self.assertEqual(token.buys_5m, 40)
         self.assertEqual(token.buy_sell_ratio, 2)
         self.assertFalse(token.social_data_available)
+        self.assertEqual(token.dex_id, "raydium")
+        self.assertIn("dexscreener.com", token.chart_url)
+
+    def test_live_report_explains_metrics_and_safety(self):
+        token = replace(
+            demo_candidate(),
+            social_data_available=False,
+            chart_url="https://dexscreener.com/solana/pair",
+            dex_id="raydium",
+        )
+        message = format_live_alert(token, self.commander.decide(token))
+        self.assertIn("LIVE DATA / PAPER ONLY", message)
+        self.assertIn("SAFETY", message)
+        self.assertIn("Pool age", message)
+        self.assertIn("No wallet access", message)
+        self.assertIn("https://dexscreener.com/solana/pair", message)
 
 
 if __name__ == "__main__":

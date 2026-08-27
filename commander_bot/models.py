@@ -25,6 +25,8 @@ class TokenSnapshot:
     price_change_1h_pct: float
     pool_age_minutes: int
     social_data_available: bool = True
+    chart_url: str = ""
+    dex_id: str = ""
     observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

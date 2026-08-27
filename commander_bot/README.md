@@ -15,6 +15,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Automated tests
 - Live execution deliberately disabled
 - Optional Live Data V3 scanner using DEX Screener discovery and Helius on-chain checks
+- Live Data V4 Telegram reports with price, liquidity, volume, pool age, holder concentration, authority warnings, decision reasons, and direct chart links
 
 ## Quick start
 

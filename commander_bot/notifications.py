@@ -2,7 +2,7 @@ import json
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
-from .models import CommanderDecision
+from .models import CommanderDecision, TokenSnapshot
 
 
 def format_alert(decision: CommanderDecision, display_name: str = "Degen Detector") -> str:
@@ -12,6 +12,62 @@ def format_alert(decision: CommanderDecision, display_name: str = "Degen Detecto
     if decision.vetoes:
         lines.append("Vetoes: " + "; ".join(decision.vetoes))
     lines.extend(decision.reasons)
+    return "\n".join(lines)
+
+
+def _usd(value: float) -> str:
+    if 0 < value < 0.01:
+        return f"${value:.10f}".rstrip("0")
+    return f"${value:,.2f}"
+
+
+def _age(minutes: int) -> str:
+    if minutes < 60:
+        return f"{minutes}m"
+    if minutes < 1_440:
+        return f"{minutes // 60}h {minutes % 60}m"
+    return f"{minutes // 1_440}d {(minutes % 1_440) // 60}h"
+
+
+def format_live_alert(token: TokenSnapshot, decision: CommanderDecision, display_name: str = "Degen Detector") -> str:
+    status_icon = {"PAPER_BUY_APPROVED": "🟢", "WATCHLIST": "🟡", "REJECTED": "🔴"}.get(decision.status, "⚪")
+    lines = [
+        "🌐 LIVE DATA / PAPER ONLY",
+        f"{status_icon} {display_name.upper()} — {decision.status}",
+        f"🪙 {token.symbol}",
+        f"Mint: {token.mint}",
+        "",
+        f"🎯 Commander: {decision.score:.1f}/100",
+        f"💵 Price: {_usd(token.price_usd)}",
+        f"💧 Liquidity: {_usd(token.liquidity_usd)}",
+        f"📊 Volume 5m: {_usd(token.volume_5m_usd)}",
+        f"🧾 Buys 5m: {token.buys_5m} | Buy/Sell: {token.buy_sell_ratio:.2f}",
+        f"📈 Price: {token.price_change_5m_pct:+.1f}% (5m) | {token.price_change_1h_pct:+.1f}% (1h)",
+        f"⏳ Pool age: {_age(token.pool_age_minutes)} | DEX: {token.dex_id}",
+        "",
+        "🛡️ SAFETY",
+        f"Top-10 holders: {token.top10_holder_pct:.1f}%",
+        f"Mint authority: {'ACTIVE ⚠️' if token.mint_authority_active else 'Revoked ✅'}",
+        f"Freeze authority: {'ACTIVE ⚠️' if token.freeze_authority_active else 'Revoked ✅'}",
+        f"Observed sells: {'Yes ✅' if token.sellable else 'No ⚠️'}",
+        f"Estimated slippage: {token.estimated_slippage_pct:.2f}%",
+        "",
+        "🤖 SPECIALISTS",
+        f"Social: {decision.reports['social'].score:.1f}/100 (feed not connected)",
+        f"On-chain: {decision.reports['onchain'].score:.1f}/100",
+        f"Chart: {decision.reports['chart'].score:.1f}/100",
+        f"Risk: {decision.reports['risk'].score:.1f}/100",
+    ]
+    if decision.paper_position_usd:
+        lines.append(f"\n🧪 Paper position: ${decision.paper_position_usd:.2f}")
+    if decision.vetoes:
+        lines.append("\n⛔ REJECTION REASONS")
+        lines.extend(f"• {veto}" for veto in decision.vetoes)
+    elif decision.status == "WATCHLIST":
+        lines.append("\n👀 Below the approval score; watchlist only.")
+    lines.append("\n⚠️ No wallet access. Not financial advice.")
+    if token.chart_url:
+        lines.append(f"🔗 Chart: {token.chart_url}")
     return "\n".join(lines)
 
 

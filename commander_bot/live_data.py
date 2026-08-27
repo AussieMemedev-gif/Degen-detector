@@ -9,7 +9,7 @@ from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, Soci
 from .commander import ChiefCommander
 from .config import Settings
 from .models import CommanderDecision, TokenSnapshot
-from .notifications import format_alert, send_telegram
+from .notifications import format_live_alert, send_telegram
 from .storage import Ledger
 
 
@@ -118,6 +118,8 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
         price_change_1h_pct=float(price_change.get("h1") or 0),
         pool_age_minutes=max(0, int((time.time() * 1000 - created_ms) / 60_000)),
         social_data_available=False,
+        chart_url=str(pair.get("url") or ""),
+        dex_id=str(pair.get("dexId") or "unknown"),
         observed_at=datetime.now(timezone.utc),
     )
 
@@ -145,6 +147,6 @@ def run_live_scan(settings: Settings) -> str:
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
     best_snapshot, best_decision = results[0]
-    message = "🌐 LIVE DATA / PAPER ONLY\n" + format_alert(best_decision, settings.bot_display_name)
+    message = format_live_alert(best_snapshot, best_decision, settings.bot_display_name)
     send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
     return message
