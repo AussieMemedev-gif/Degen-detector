@@ -150,3 +150,27 @@ def run_live_scan(settings: Settings) -> str:
     message = format_live_alert(best_snapshot, best_decision, settings.bot_display_name)
     send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
     return message
+
+
+def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
+    """Run a quiet, filtered paper-only scan for the automatic scheduler."""
+    now = now or datetime.now(timezone.utc)
+    if not settings.live_data_enabled:
+        return "Automatic scan skipped: live data is disabled."
+    results = analyse_candidates(settings, discover_mints(settings.live_candidate_limit))
+    if not results:
+        return "Automatic scan completed: no valid candidates."
+    ledger = Ledger(settings.database_path)
+    for snapshot, decision in results:
+        ledger.record(snapshot, decision)
+    best_snapshot, best_decision = results[0]
+    if best_decision.status == "REJECTED" or best_decision.score < settings.auto_alert_min_score:
+        return f"Automatic scan completed: best score {best_decision.score:.1f}; no alert."
+    if ledger.recently_alerted(best_snapshot.mint, settings.auto_duplicate_cooldown_minutes, now):
+        return f"Automatic scan completed: repeat alert suppressed for {best_snapshot.symbol}."
+    message = "🕒 AUTOMATIC PEAK-TIME ALERT\n" + format_live_alert(
+        best_snapshot, best_decision, settings.bot_display_name
+    )
+    send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
+    ledger.record_alert(best_snapshot.mint, now)
+    return f"Automatic alert sent for {best_snapshot.symbol} ({best_decision.score:.1f}/100)."

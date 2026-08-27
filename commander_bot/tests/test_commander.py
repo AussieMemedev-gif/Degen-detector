@@ -1,6 +1,8 @@
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import datetime, timezone
+from unittest.mock import patch
 from commander_bot.agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
 from commander_bot.commander import ChiefCommander
 from commander_bot.config import Settings
@@ -45,6 +47,33 @@ class CommanderTests(unittest.TestCase):
             self.assertIn("PAPER ONLY", restarted.status_message())
             restarted.handle("emergency_stop")
             self.assertEqual(restarted.mode, "EMERGENCY_STOP")
+            self.assertIn("Scan blocked", restarted.handle("scan_once"))
+
+    def test_automatic_runs_only_in_peak_window_and_waits_for_interval(self):
+        with tempfile.NamedTemporaryFile() as database:
+            settings = Settings(
+                database_path=database.name,
+                auto_timezone="UTC",
+                auto_peak_start_hour=18,
+                auto_peak_end_hour=2,
+                auto_scan_interval_minutes=15,
+            )
+            controller = BotController(settings)
+            controller.handle("automatic")
+            outside = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+            inside = datetime(2026, 8, 28, 20, 0, tzinfo=timezone.utc)
+            self.assertIsNone(controller.maybe_run_automatic(outside))
+            with patch("commander_bot.live_data.run_automatic_scan", return_value="scan complete") as scan:
+                self.assertEqual(controller.maybe_run_automatic(inside), "scan complete")
+                self.assertIsNone(controller.maybe_run_automatic(inside))
+                scan.assert_called_once()
+
+    def test_alert_history_suppresses_recent_duplicates(self):
+        ledger = Ledger(":memory:")
+        now = datetime(2026, 8, 28, 20, 0, tzinfo=timezone.utc)
+        self.assertFalse(ledger.recently_alerted("mint", 180, now))
+        ledger.record_alert("mint", now)
+        self.assertTrue(ledger.recently_alerted("mint", 180, now))
 
     def test_live_pair_mapping_uses_real_pair_fields_and_no_fake_social_data(self):
         pair = {

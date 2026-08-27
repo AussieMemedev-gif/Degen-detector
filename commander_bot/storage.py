@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from .models import CommanderDecision, TokenSnapshot
 
 
@@ -13,6 +14,8 @@ class Ledger:
             snapshot_json TEXT NOT NULL, decision_json TEXT NOT NULL)""")
         self.connection.execute("""CREATE TABLE IF NOT EXISTS bot_state (
             key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS alert_history (
+            mint TEXT PRIMARY KEY, alerted_at TEXT NOT NULL)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -36,5 +39,22 @@ class Ledger:
             "INSERT INTO bot_state(key,value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
+        )
+        self.connection.commit()
+
+    def recently_alerted(self, mint: str, cooldown_minutes: int, now: datetime) -> bool:
+        row = self.connection.execute(
+            "SELECT alerted_at FROM alert_history WHERE mint = ?", (mint,)
+        ).fetchone()
+        if not row:
+            return False
+        alerted_at = datetime.fromisoformat(row[0])
+        return alerted_at > now.astimezone(timezone.utc) - timedelta(minutes=cooldown_minutes)
+
+    def record_alert(self, mint: str, now: datetime) -> None:
+        self.connection.execute(
+            "INSERT INTO alert_history(mint,alerted_at) VALUES(?,?) "
+            "ON CONFLICT(mint) DO UPDATE SET alerted_at=excluded.alerted_at",
+            (mint, now.astimezone(timezone.utc).isoformat()),
         )
         self.connection.commit()
