@@ -19,6 +19,13 @@ class Ledger:
         self.connection.execute("""CREATE TABLE IF NOT EXISTS tracked_wallets (
             address TEXT PRIMARY KEY, label TEXT NOT NULL, created_at TEXT NOT NULL,
             last_signature TEXT NOT NULL DEFAULT '')""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS paper_positions (
+            id INTEGER PRIMARY KEY, wallet_address TEXT NOT NULL, wallet_label TEXT NOT NULL,
+            mint TEXT NOT NULL, opened_at TEXT NOT NULL, entry_price REAL NOT NULL,
+            token_quantity REAL NOT NULL, position_usd REAL NOT NULL,
+            entry_signature TEXT NOT NULL, closed_at TEXT NOT NULL DEFAULT '',
+            exit_price REAL NOT NULL DEFAULT 0, exit_signature TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'OPEN', realized_pnl_usd REAL NOT NULL DEFAULT 0)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -86,3 +93,66 @@ class Ledger:
             (signature, address),
         )
         self.connection.commit()
+
+    def open_paper_position(
+        self, wallet_address: str, wallet_label: str, mint: str, entry_price: float,
+        position_usd: float, signature: str, opened_at: datetime,
+    ) -> bool:
+        existing = self.connection.execute(
+            "SELECT id FROM paper_positions WHERE wallet_address = ? AND mint = ? AND status = 'OPEN'",
+            (wallet_address, mint),
+        ).fetchone()
+        if existing or entry_price <= 0 or position_usd <= 0:
+            return False
+        self.connection.execute(
+            "INSERT INTO paper_positions(wallet_address,wallet_label,mint,opened_at,entry_price,"
+            "token_quantity,position_usd,entry_signature) VALUES(?,?,?,?,?,?,?,?)",
+            (wallet_address, wallet_label, mint, opened_at.astimezone(timezone.utc).isoformat(),
+             entry_price, position_usd / entry_price, position_usd, signature),
+        )
+        self.connection.commit()
+        return True
+
+    def close_paper_positions(
+        self, wallet_address: str, mint: str, exit_price: float, signature: str, closed_at: datetime,
+    ) -> list[float]:
+        rows = self.connection.execute(
+            "SELECT id,token_quantity,position_usd FROM paper_positions "
+            "WHERE wallet_address = ? AND mint = ? AND status = 'OPEN'",
+            (wallet_address, mint),
+        ).fetchall()
+        results: list[float] = []
+        for position_id, quantity, position_usd in rows:
+            pnl = (float(quantity) * exit_price) - float(position_usd)
+            self.connection.execute(
+                "UPDATE paper_positions SET closed_at=?,exit_price=?,exit_signature=?,status='CLOSED',"
+                "realized_pnl_usd=? WHERE id=?",
+                (closed_at.astimezone(timezone.utc).isoformat(), exit_price, signature, pnl, position_id),
+            )
+            results.append(pnl)
+        self.connection.commit()
+        return results
+
+    def open_paper_positions(self) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT wallet_label,mint,opened_at,entry_price,token_quantity,position_usd "
+            "FROM paper_positions WHERE status='OPEN' ORDER BY opened_at DESC"
+        ).fetchall()
+
+    def paper_totals(self) -> tuple[int, float, int, int]:
+        row = self.connection.execute(
+            "SELECT COUNT(*),COALESCE(SUM(realized_pnl_usd),0),"
+            "COALESCE(SUM(CASE WHEN realized_pnl_usd > 0 THEN 1 ELSE 0 END),0),"
+            "COALESCE(SUM(CASE WHEN realized_pnl_usd <= 0 THEN 1 ELSE 0 END),0) "
+            "FROM paper_positions WHERE status='CLOSED'"
+        ).fetchone()
+        return int(row[0]), float(row[1]), int(row[2]), int(row[3])
+
+    def trader_performance(self) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT wallet_label,wallet_address,COUNT(*),"
+            "SUM(CASE WHEN realized_pnl_usd > 0 THEN 1 ELSE 0 END),"
+            "COALESCE(SUM(realized_pnl_usd),0) FROM paper_positions "
+            "WHERE status='CLOSED' GROUP BY wallet_address,wallet_label "
+            "ORDER BY COALESCE(SUM(realized_pnl_usd),0) DESC"
+        ).fetchall()

@@ -12,6 +12,7 @@ from commander_bot.control import BotController
 from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_from_pair
 from commander_bot.notifications import format_live_alert
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
+from commander_bot.paper_copy import portfolio_message, process_wallet_events, trader_rankings_message
 
 
 class CommanderTests(unittest.TestCase):
@@ -170,6 +171,40 @@ class CommanderTests(unittest.TestCase):
         movements = transaction_movements(transaction, wallet)
         self.assertEqual(movements[0]["action"], "BUY / TOKEN IN")
         self.assertEqual(movements[0]["amount"], 100)
+
+    def test_paper_copy_is_opt_in_and_never_opens_when_disabled(self):
+        ledger = Ledger(":memory:")
+        event = {
+            "wallet_address": "11111111111111111111111111111111",
+            "wallet_label": "Demo Trader", "signature": "buy-sig",
+            "mint": "demo-mint", "action": "BUY / TOKEN IN",
+        }
+        messages = process_wallet_events(self.settings, ledger, [event], price_lookup=lambda _: 0.50)
+        self.assertEqual(messages, [])
+        self.assertEqual(ledger.open_paper_positions(), [])
+
+    def test_paper_copy_records_pnl_and_trader_performance(self):
+        ledger = Ledger(":memory:")
+        ledger.set_state("paper_copy_enabled", "ON")
+        wallet = "11111111111111111111111111111111"
+        buy = {
+            "wallet_address": wallet, "wallet_label": "Demo Trader", "signature": "buy-sig",
+            "mint": "demo-mint", "action": "BUY / TOKEN IN",
+        }
+        sell = {**buy, "signature": "sell-sig", "action": "SELL / TOKEN OUT"}
+        opened = process_wallet_events(self.settings, ledger, [buy], price_lookup=lambda _: 0.50)
+        self.assertIn("PAPER COPY — OPENED", opened[0])
+        self.assertIn("Open positions: 1", portfolio_message(ledger))
+        closed = process_wallet_events(self.settings, ledger, [sell], price_lookup=lambda _: 1.00)
+        self.assertIn("+25.00 USD", closed[0])
+        self.assertIn("Win rate: 100%", trader_rankings_message(ledger))
+
+    def test_paper_copy_telegram_commands_toggle_and_report(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        self.assertIn("enabled", controller.handle_wallet_command("/paperon"))
+        self.assertEqual(controller.ledger.get_state("paper_copy_enabled"), "ON")
+        self.assertIn("PAPER PORTFOLIO", controller.handle_wallet_command("/portfolio"))
+        self.assertIn("disabled", controller.handle_wallet_command("/paperoff"))
 
 
 if __name__ == "__main__":

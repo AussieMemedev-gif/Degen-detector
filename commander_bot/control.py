@@ -4,7 +4,10 @@ from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
-from .notifications import answer_callback, get_updates, send_control_menu, send_settings_menu, send_telegram, send_wallet_menu
+from .notifications import (
+    answer_callback, get_updates, send_control_menu, send_paper_copy_menu,
+    send_settings_menu, send_telegram, send_wallet_menu,
+)
 from .storage import Ledger
 
 
@@ -160,6 +163,9 @@ class BotController:
             "Remove: /untrack ADDRESS\n"
             "List: /wallets\n"
             "Check now: /signals\n\n"
+            "Paper copy: /paperon or /paperoff\n"
+            "Portfolio: /portfolio\n"
+            "Trader rankings: /traders\n\n"
             "Example: /track 7abc...xyz SmartTrader\n"
             "Only use public wallet addresses. Never send a seed phrase or private key."
         )
@@ -185,15 +191,49 @@ class BotController:
             return self.wallets_message()
         if command == "/signals":
             return self.check_wallet_signals()
+        if command == "/paperon":
+            self.ledger.set_state("paper_copy_enabled", "ON")
+            return "✅ Paper Copy enabled. Future tracked BUY/SELL signals will be simulated only."
+        if command == "/paperoff":
+            self.ledger.set_state("paper_copy_enabled", "OFF")
+            return "⏹️ Paper Copy disabled. Existing paper positions remain in the portfolio."
+        if command == "/portfolio":
+            from .paper_copy import portfolio_message
+            return portfolio_message(self.ledger)
+        if command == "/traders":
+            from .paper_copy import trader_rankings_message
+            return trader_rankings_message(self.ledger)
         return None
+
+    def paper_copy_message(self) -> str:
+        from .paper_copy import paper_status_message
+        return paper_status_message(self.settings, self.ledger)
+
+    def handle_paper_action(self, action: str) -> str:
+        if action == "paper_on":
+            self.ledger.set_state("paper_copy_enabled", "ON")
+            return self.paper_copy_message()
+        if action == "paper_off":
+            self.ledger.set_state("paper_copy_enabled", "OFF")
+            return self.paper_copy_message()
+        if action == "paper_portfolio":
+            from .paper_copy import portfolio_message
+            return portfolio_message(self.ledger)
+        if action == "paper_traders":
+            from .paper_copy import trader_rankings_message
+            return trader_rankings_message(self.ledger)
+        return self.paper_copy_message()
 
     def check_wallet_signals(self) -> str:
         if self.mode == "EMERGENCY_STOP":
             return "🚨 Wallet checks blocked: Emergency Stop is enabled."
         if not self.ledger.tracked_wallets():
             return "No wallets tracked yet. Use /track ADDRESS LABEL"
-        from .wallet_tracker import poll_wallet_signals
-        messages = poll_wallet_signals(self.settings, self.ledger)
+        from .paper_copy import process_wallet_events
+        from .wallet_tracker import poll_wallet_events
+        events = poll_wallet_events(self.settings, self.ledger)
+        messages = [event["message"] for event in events]
+        messages.extend(process_wallet_events(self.settings, self.ledger, events))
         if not messages:
             return "📡 Wallet check complete: no new token movements."
         for message in messages[:-1]:
@@ -212,8 +252,12 @@ class BotController:
             (now + timedelta(seconds=max(30, self.settings.wallet_check_interval_seconds))).isoformat(),
         )
         try:
-            from .wallet_tracker import poll_wallet_signals
-            for message in poll_wallet_signals(self.settings, self.ledger):
+            from .paper_copy import process_wallet_events
+            from .wallet_tracker import poll_wallet_events
+            events = poll_wallet_events(self.settings, self.ledger)
+            messages = [event["message"] for event in events]
+            messages.extend(process_wallet_events(self.settings, self.ledger, events))
+            for message in messages:
                 send_telegram(self.settings.telegram_token, self.settings.telegram_chat_id, message)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             return
@@ -277,6 +321,10 @@ def run_control_bot(settings: Settings) -> None:
                     send_wallet_menu(settings.telegram_token, chat_id, controller.wallet_help_message())
                 elif action == "wallet_signals":
                     send_wallet_menu(settings.telegram_token, chat_id, controller.check_wallet_signals())
+                elif action == "paper_copy":
+                    send_paper_copy_menu(settings.telegram_token, chat_id, controller.paper_copy_message())
+                elif action.startswith("paper_"):
+                    send_paper_copy_menu(settings.telegram_token, chat_id, controller.handle_paper_action(action))
                 elif action == "main_menu":
                     send_control_menu(settings.telegram_token, chat_id, controller.status_message())
                 elif action == "noop":

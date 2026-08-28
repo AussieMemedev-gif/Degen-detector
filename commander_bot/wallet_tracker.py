@@ -63,8 +63,8 @@ def _format_signal(label: str, address: str, signature: str, movement: Dict[str,
     )
 
 
-def poll_wallet_signals(settings: Settings, ledger: Ledger) -> List[str]:
-    messages: List[str] = []
+def poll_wallet_events(settings: Settings, ledger: Ledger) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
     for address, label, cursor in ledger.tracked_wallets():
         signatures = helius_rpc(settings.helius_api_key, "getSignaturesForAddress", [
             address, {"commitment": "confirmed", "limit": 10}
@@ -88,6 +88,16 @@ def poll_wallet_signals(settings: Settings, ledger: Ledger) -> List[str]:
                 {"commitment": "confirmed", "encoding": "jsonParsed", "maxSupportedTransactionVersion": 0},
             ])
             for movement in transaction_movements(transaction, address):
-                messages.append(_format_signal(label, address, signature, movement))
+                events.append({
+                    "wallet_address": address,
+                    "wallet_label": label,
+                    "signature": signature,
+                    **movement,
+                    "message": _format_signal(label, address, signature, movement),
+                })
         ledger.set_wallet_cursor(address, newest)
-    return messages
+    return events
+
+
+def poll_wallet_signals(settings: Settings, ledger: Ledger) -> List[str]:
+    return [event["message"] for event in poll_wallet_events(settings, ledger)]

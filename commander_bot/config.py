@@ -38,3 +38,4 @@ class Settings:
     auto_peak_start_hour: int = _int("AUTO_PEAK_START_HOUR", 18)
     auto_peak_end_hour: int = _int("AUTO_PEAK_END_HOUR", 2)
     wallet_check_interval_seconds: int = _int("WALLET_CHECK_INTERVAL_SECONDS", 60)
+    paper_copy_max_open_positions: int = _int("PAPER_COPY_MAX_OPEN_POSITIONS", 10)

@@ -20,6 +20,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Telegram V6 settings menu for changing interval, peak window, score floor, and repeat cooldown without GitHub or Railway
 - Live Hot Token Leaderboard that excludes unsafe, dumping, and severely overextended candidates
 - Read-only Wallet/KOL Tracker with Telegram-managed addresses and new token movement signals
+- Opt-in V9 Paper Copy simulator with fixed-size positions, a paper portfolio, and experimental tracked-trader rankings
 
 ## Quick start
 
@@ -32,6 +33,8 @@ python -m unittest discover -s commander_bot/tests -v
 Set the environment variables shown in `.env.example` in the hosting dashboard. Never paste bot tokens or wallet private keys into Telegram or source code. Send `/start` to the bot after the control service starts.
 
 The control buttons operate the safe paper pipeline. `Automatic` runs scans only inside its configured local-time peak window, applies an alert score floor, and suppresses repeated alerts. Manual sessions declare a configurable expiry. Emergency Stop blocks manual and automatic scanning.
+
+Paper Copy starts disabled. Enable it from **Wallet / KOL Tracker → Paper Copy Trading** or with `/paperon`. New observed BUY signals open simulated fixed-size positions and corresponding SELL signals close them. `/portfolio` shows paper positions and `/traders` ranks only completed simulations. It never submits a transaction and never asks for a private key.
 
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
 

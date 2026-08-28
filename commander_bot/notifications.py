@@ -155,8 +155,23 @@ def wallet_keyboard() -> Dict[str, Any]:
             {"text": "📋 Tracked Wallets", "callback_data": "wallet_list"},
             {"text": "📡 Check Signals", "callback_data": "wallet_signals"},
         ],
+        [{"text": "🧪 Paper Copy Trading", "callback_data": "paper_copy"}],
         [{"text": "➕ How to Add / Remove", "callback_data": "wallet_help"}],
         [{"text": "⬅️ Main Menu", "callback_data": "main_menu"}],
+    ]}
+
+
+def paper_copy_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "✅ Enable Paper Copy", "callback_data": "paper_on"},
+            {"text": "⏹️ Disable", "callback_data": "paper_off"},
+        ],
+        [
+            {"text": "📒 Portfolio", "callback_data": "paper_portfolio"},
+            {"text": "🏆 Trader Rankings", "callback_data": "paper_traders"},
+        ],
+        [{"text": "⬅️ Wallet Tracker", "callback_data": "wallet_tracker"}],
     ]}
 
 
@@ -181,6 +196,14 @@ def send_wallet_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": wallet_keyboard(),
+    })
+
+
+def send_paper_copy_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": paper_copy_keyboard(),
     })
 
 
