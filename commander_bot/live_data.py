@@ -137,6 +137,62 @@ def analyse_candidates(settings: Settings, mints: Iterable[str]) -> List[tuple[T
     return sorted(results, key=lambda item: item[1].score, reverse=True)
 
 
+def hot_score(snapshot: TokenSnapshot, decision: CommanderDecision) -> float:
+    """Rank liquid, safe tokens that are holding momentum instead of actively dumping."""
+    if decision.status == "REJECTED" or decision.vetoes:
+        return -1
+    if snapshot.price_change_5m_pct < -8 or snapshot.price_change_1h_pct < -20:
+        return -1
+    if snapshot.price_change_5m_pct > 150 or snapshot.price_change_1h_pct > 400:
+        return -1
+    score = decision.score
+    score += 6 if -2 <= snapshot.price_change_5m_pct <= 25 else 0
+    score += 6 if 0 <= snapshot.price_change_1h_pct <= 100 else 0
+    score += min(max(snapshot.buy_sell_ratio - 1, 0) * 4, 8)
+    score += 4 if snapshot.liquidity_usd >= 50_000 else 0
+    if snapshot.price_change_5m_pct > 75 or snapshot.price_change_1h_pct > 250:
+        score -= 12
+    return round(max(0, min(100, score)), 1)
+
+
+def format_hot_leaderboard(results: List[tuple[TokenSnapshot, CommanderDecision]], limit: int = 5) -> str:
+    ranked = sorted(
+        ((hot_score(snapshot, decision), snapshot, decision) for snapshot, decision in results),
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    ranked = [item for item in ranked if item[0] >= 0][:limit]
+    if not ranked:
+        return (
+            "🔥 HOT TOKEN LEADERBOARD\n\n"
+            "No tokens currently meet the safety and holding-strength checks.\n"
+            "Live data / paper only."
+        )
+    lines = ["🔥 HOT TOKEN LEADERBOARD", "Live data / paper only", ""]
+    for index, (rank_score, snapshot, decision) in enumerate(ranked, start=1):
+        state = "💎 HOLDING" if snapshot.price_change_5m_pct >= -2 else "👀 WATCH"
+        lines.extend([
+            f"{index}. {snapshot.symbol} — {rank_score:.1f}/100 {state}",
+            f"Commander {decision.score:.1f} | 5m {snapshot.price_change_5m_pct:+.1f}% | 1h {snapshot.price_change_1h_pct:+.1f}%",
+            f"Liquidity ${snapshot.liquidity_usd:,.0f} | Buy/Sell {snapshot.buy_sell_ratio:.2f}",
+            f"Mint: {snapshot.mint}",
+            f"Chart: {snapshot.chart_url}" if snapshot.chart_url else "",
+            "",
+        ])
+    lines.append("⚠️ Rankings can change quickly. No wallet access; not financial advice.")
+    return "\n".join(line for line in lines if line != "" or lines[-1] == line)
+
+
+def build_hot_leaderboard(settings: Settings) -> str:
+    if not settings.live_data_enabled:
+        return "🔥 Leaderboard unavailable: live data is disabled."
+    results = analyse_candidates(settings, discover_mints(settings.live_candidate_limit))
+    ledger = Ledger(settings.database_path)
+    for snapshot, decision in results:
+        ledger.record(snapshot, decision)
+    return format_hot_leaderboard(results)
+
+
 def run_live_scan(settings: Settings) -> str:
     results = analyse_candidates(settings, discover_mints(settings.live_candidate_limit))
     if not results:

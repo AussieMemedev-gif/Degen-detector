@@ -18,6 +18,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Live Data V4 Telegram reports with price, liquidity, volume, pool age, holder concentration, authority warnings, decision reasons, and direct chart links
 - Automatic V5 peak-window scanning with intervals, score filtering, duplicate-alert cooldowns, status reporting, and Emergency Stop enforcement
 - Telegram V6 settings menu for changing interval, peak window, score floor, and repeat cooldown without GitHub or Railway
+- Live Hot Token Leaderboard that excludes unsafe, dumping, and severely overextended candidates
 
 ## Quick start
 

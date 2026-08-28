@@ -8,7 +8,7 @@ from .notifications import answer_callback, get_updates, send_control_menu, send
 from .storage import Ledger
 
 
-VALID_ACTIONS = {"scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop"}
+VALID_ACTIONS = {"scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop", "leaderboard"}
 
 
 class BotController:
@@ -91,6 +91,11 @@ class BotController:
             return "✅ Scan completed. The Commander report has been sent."
         if action == "status":
             return self.status_message()
+        if action == "leaderboard":
+            if self.mode == "EMERGENCY_STOP":
+                return "🚨 Leaderboard blocked: Emergency Stop is enabled."
+            from .live_data import build_hot_leaderboard
+            return build_hot_leaderboard(self.settings)
         if action == "manual_on":
             until = datetime.now(timezone.utc) + timedelta(minutes=self.settings.manual_session_minutes)
             self.ledger.set_state("mode", "MANUAL")

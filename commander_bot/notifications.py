@@ -109,6 +109,7 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🕒 Automatic", "callback_data": "automatic"},
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
+        [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
         [{"text": "⚙️ Settings", "callback_data": "settings"}],
     ]}
 

@@ -9,7 +9,7 @@ from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
-from commander_bot.live_data import snapshot_from_pair
+from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_from_pair
 from commander_bot.notifications import format_live_alert
 
 
@@ -127,6 +127,24 @@ class CommanderTests(unittest.TestCase):
         self.assertIn("Pool age", message)
         self.assertIn("No wallet access", message)
         self.assertIn("https://dexscreener.com/solana/pair", message)
+
+    def test_hot_leaderboard_rewards_holding_and_rejects_dumping(self):
+        holding = replace(
+            demo_candidate(),
+            symbol="HOLD",
+            price_change_5m_pct=4,
+            price_change_1h_pct=25,
+            chart_url="https://dexscreener.com/solana/hold",
+        )
+        dumping = replace(demo_candidate(), symbol="DUMP", price_change_5m_pct=-20)
+        holding_decision = self.commander.decide(holding)
+        dumping_decision = self.commander.decide(dumping)
+        self.assertGreaterEqual(hot_score(holding, holding_decision), 0)
+        self.assertEqual(hot_score(dumping, dumping_decision), -1)
+        message = format_hot_leaderboard([(holding, holding_decision), (dumping, dumping_decision)])
+        self.assertIn("HOT TOKEN LEADERBOARD", message)
+        self.assertIn("HOLD", message)
+        self.assertNotIn("DUMP —", message)
 
 
 if __name__ == "__main__":
