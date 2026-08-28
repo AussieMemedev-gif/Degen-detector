@@ -109,6 +109,41 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🕒 Automatic", "callback_data": "automatic"},
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
+        [{"text": "⚙️ Settings", "callback_data": "settings"}],
+    ]}
+
+
+def settings_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [{"text": "SCAN INTERVAL", "callback_data": "noop"}],
+        [
+            {"text": "3m", "callback_data": "interval_3"},
+            {"text": "5m", "callback_data": "interval_5"},
+            {"text": "10m", "callback_data": "interval_10"},
+            {"text": "15m", "callback_data": "interval_15"},
+            {"text": "30m", "callback_data": "interval_30"},
+        ],
+        [{"text": "PEAK WINDOW", "callback_data": "noop"}],
+        [
+            {"text": "24/7", "callback_data": "window_0_0"},
+            {"text": "18–02", "callback_data": "window_18_2"},
+            {"text": "20–04", "callback_data": "window_20_4"},
+            {"text": "22–06", "callback_data": "window_22_6"},
+        ],
+        [{"text": "ALERT SCORE", "callback_data": "noop"}],
+        [
+            {"text": "50+", "callback_data": "score_50"},
+            {"text": "60+", "callback_data": "score_60"},
+            {"text": "70+", "callback_data": "score_70"},
+            {"text": "80+", "callback_data": "score_80"},
+        ],
+        [{"text": "REPEAT COOLDOWN", "callback_data": "noop"}],
+        [
+            {"text": "1h", "callback_data": "cooldown_60"},
+            {"text": "3h", "callback_data": "cooldown_180"},
+            {"text": "6h", "callback_data": "cooldown_360"},
+        ],
+        [{"text": "⬅️ Main Menu", "callback_data": "main_menu"}],
     ]}
 
 
@@ -117,6 +152,14 @@ def send_control_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": control_keyboard(),
+    })
+
+
+def send_settings_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": settings_keyboard(),
     })
 
 

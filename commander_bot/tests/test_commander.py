@@ -75,6 +75,29 @@ class CommanderTests(unittest.TestCase):
         ledger.record_alert("mint", now)
         self.assertTrue(ledger.recently_alerted("mint", 180, now))
 
+    def test_preferences_can_be_changed_without_redeploying(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        controller.set_preference("interval_5")
+        controller.set_preference("window_20_4")
+        controller.set_preference("score_70")
+        controller.set_preference("cooldown_60")
+        settings = controller.automatic_settings()
+        self.assertEqual(settings.auto_scan_interval_minutes, 5)
+        self.assertEqual((settings.auto_peak_start_hour, settings.auto_peak_end_hour), (20, 4))
+        self.assertEqual(settings.auto_alert_min_score, 70)
+        self.assertEqual(settings.auto_duplicate_cooldown_minutes, 60)
+        self.assertIn("/interval 7", controller.settings_message())
+
+    def test_custom_interval_and_window_commands(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        controller.handle_text_setting("/interval 7")
+        controller.handle_text_setting("/window 17 3")
+        controller.handle_text_setting("/cooldown 120")
+        settings = controller.automatic_settings()
+        self.assertEqual(settings.auto_scan_interval_minutes, 7)
+        self.assertEqual((settings.auto_peak_start_hour, settings.auto_peak_end_hour), (17, 3))
+        self.assertEqual(settings.auto_duplicate_cooldown_minutes, 120)
+
     def test_live_pair_mapping_uses_real_pair_fields_and_no_fake_social_data(self):
         pair = {
             "baseToken": {"symbol": "LIVE"}, "priceUsd": "0.01",
