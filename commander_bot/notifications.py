@@ -110,6 +110,7 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
+        [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
         [{"text": "⚙️ Settings", "callback_data": "settings"}],
     ]}
@@ -175,6 +176,23 @@ def paper_copy_keyboard() -> Dict[str, Any]:
     ]}
 
 
+def launchpad_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "🟢 PF", "callback_data": "launch_pf"},
+            {"text": "🐕 BONK", "callback_data": "launch_bonk"},
+        ],
+        [
+            {"text": "🌊 Raydium", "callback_data": "launch_raydium"},
+            {"text": "☄️ Meteora", "callback_data": "launch_meteora"},
+        ],
+        [{"text": "🪐 Jupiter", "callback_data": "launch_jupiter"}],
+        [{"text": "🔥 Qualified 75+", "callback_data": "launch_qualified"}],
+        [{"text": "ℹ️ Coverage & limits", "callback_data": "launch_help"}],
+        [{"text": "⬅️ Main Menu", "callback_data": "main_menu"}],
+    ]}
+
+
 def send_control_menu(token: str, chat_id: str, message: str) -> None:
     telegram_request(token, "sendMessage", {
         "chat_id": chat_id,
@@ -204,6 +222,15 @@ def send_paper_copy_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": paper_copy_keyboard(),
+    })
+
+
+def send_launchpad_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": launchpad_keyboard(),
+        "disable_web_page_preview": True,
     })
 
 

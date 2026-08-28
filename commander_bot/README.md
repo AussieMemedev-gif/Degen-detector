@@ -21,6 +21,8 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Live Hot Token Leaderboard that excludes unsafe, dumping, and severely overextended candidates
 - Read-only Wallet/KOL Tracker with Telegram-managed addresses and new token movement signals
 - Opt-in V9 Paper Copy simulator with fixed-size positions, a paper portfolio, and experimental tracked-trader rankings
+- Stage 10 Solana Launchpad Hub with PF, BONK, Raydium, Meteora, Jupiter, and Qualified 75+ filters
+- Direct Pump.fun links plus clearly labelled screening estimates for sniper/bundle activity
 
 ## Quick start
 
@@ -37,6 +39,8 @@ The control buttons operate the safe paper pipeline. `Automatic` runs scans only
 Paper Copy starts disabled. Enable it from **Wallet / KOL Tracker → Paper Copy Trading** or with `/paperon`. New observed BUY signals open simulated fixed-size positions and corresponding SELL signals close them. `/portfolio` shows paper positions and `/traders` ranks only completed simulations. It never submits a transaction and never asks for a private key.
 
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
+
+Open **Launchpads / PF** from the main Telegram menu to filter current Solana discoveries by source. `Qualified 75+` uses `LAUNCHPAD_MIN_SCORE` (default 75). The initial sniper and bundle percentages are conservative screening heuristics with low confidence; they are not forensic proof. Developer lore/history is shown as unknown until creator-wallet attribution can be verified.
 
 ## Safety gates
 

@@ -39,3 +39,5 @@ class Settings:
     auto_peak_end_hour: int = _int("AUTO_PEAK_END_HOUR", 2)
     wallet_check_interval_seconds: int = _int("WALLET_CHECK_INTERVAL_SECONDS", 60)
     paper_copy_max_open_positions: int = _int("PAPER_COPY_MAX_OPEN_POSITIONS", 10)
+    launchpad_min_score: float = _float("LAUNCHPAD_MIN_SCORE", 75)
+    launchpad_candidate_limit: int = _int("LAUNCHPAD_CANDIDATE_LIMIT", 20)

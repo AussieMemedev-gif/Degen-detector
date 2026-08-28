@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
 from .notifications import (
-    answer_callback, get_updates, send_control_menu, send_paper_copy_menu,
+    answer_callback, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
     send_settings_menu, send_telegram, send_wallet_menu,
 )
 from .storage import Ledger
@@ -224,6 +224,13 @@ class BotController:
             return trader_rankings_message(self.ledger)
         return self.paper_copy_message()
 
+    def launchpad_message(self, action: str = "launchpads") -> str:
+        from .launchpad_hub import build_launchpad_report, launchpad_help
+        if action == "launch_help":
+            return launchpad_help(self.settings)
+        platform = action.removeprefix("launch_") if action.startswith("launch_") else "all"
+        return build_launchpad_report(self.settings, platform)
+
     def check_wallet_signals(self) -> str:
         if self.mode == "EMERGENCY_STOP":
             return "🚨 Wallet checks blocked: Emergency Stop is enabled."
@@ -323,6 +330,8 @@ def run_control_bot(settings: Settings) -> None:
                     send_wallet_menu(settings.telegram_token, chat_id, controller.check_wallet_signals())
                 elif action == "paper_copy":
                     send_paper_copy_menu(settings.telegram_token, chat_id, controller.paper_copy_message())
+                elif action == "launchpads" or action.startswith("launch_"):
+                    send_launchpad_menu(settings.telegram_token, chat_id, controller.launchpad_message(action))
                 elif action.startswith("paper_"):
                     send_paper_copy_menu(settings.telegram_token, chat_id, controller.handle_paper_action(action))
                 elif action == "main_menu":

@@ -13,6 +13,7 @@ from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_
 from commander_bot.notifications import format_live_alert
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
 from commander_bot.paper_copy import portfolio_message, process_wallet_events, trader_rankings_message
+from commander_bot.launchpad_hub import identify_launchpad, _bundle_estimate, _sniper_estimate
 
 
 class CommanderTests(unittest.TestCase):
@@ -205,6 +206,21 @@ class CommanderTests(unittest.TestCase):
         self.assertEqual(controller.ledger.get_state("paper_copy_enabled"), "ON")
         self.assertIn("PAPER PORTFOLIO", controller.handle_wallet_command("/portfolio"))
         self.assertIn("disabled", controller.handle_wallet_command("/paperoff"))
+
+    def test_pump_launch_is_identified_from_mint_suffix(self):
+        token = replace(demo_candidate(), mint="DemoMintpump", dex_id="pumpswap")
+        identity = identify_launchpad(token)
+        self.assertEqual(identity.key, "pf")
+        self.assertEqual(identity.confidence, "high")
+
+    def test_launch_forensics_are_bounded_and_labelled_as_estimates(self):
+        token = replace(demo_candidate(), top10_holder_pct=35, pool_age_minutes=10, buys_5m=400)
+        bundle, bundle_confidence = _bundle_estimate(token)
+        sniper, sniper_confidence = _sniper_estimate(token)
+        self.assertTrue(0 <= bundle <= 100)
+        self.assertTrue(0 <= sniper <= 100)
+        self.assertEqual(bundle_confidence, "low")
+        self.assertEqual(sniper_confidence, "low")
 
 
 if __name__ == "__main__":
