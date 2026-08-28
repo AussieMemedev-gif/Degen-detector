@@ -11,6 +11,7 @@ from commander_bot.storage import Ledger
 from commander_bot.control import BotController
 from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_from_pair
 from commander_bot.notifications import format_live_alert
+from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
 
 
 class CommanderTests(unittest.TestCase):
@@ -145,6 +146,30 @@ class CommanderTests(unittest.TestCase):
         self.assertIn("HOT TOKEN LEADERBOARD", message)
         self.assertIn("HOLD", message)
         self.assertNotIn("DUMP —", message)
+
+    def test_wallet_tracker_management_is_persistent(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        address = "11111111111111111111111111111111"
+        self.assertTrue(valid_solana_address(address))
+        self.assertIn("Tracking", controller.handle_wallet_command(f"/track {address} Demo KOL"))
+        self.assertIn("Demo KOL", controller.wallets_message())
+        self.assertIn("removed", controller.handle_wallet_command(f"/untrack {address}"))
+
+    def test_wallet_transaction_movements_are_read_only_signals(self):
+        wallet = "11111111111111111111111111111111"
+        transaction = {
+            "meta": {
+                "err": None,
+                "preBalances": [2_000_000_000],
+                "postBalances": [1_000_000_000],
+                "preTokenBalances": [{"owner": wallet, "mint": "mint", "uiTokenAmount": {"uiAmountString": "0"}}],
+                "postTokenBalances": [{"owner": wallet, "mint": "mint", "uiTokenAmount": {"uiAmountString": "100"}}],
+            },
+            "transaction": {"message": {"accountKeys": [wallet]}},
+        }
+        movements = transaction_movements(transaction, wallet)
+        self.assertEqual(movements[0]["action"], "BUY / TOKEN IN")
+        self.assertEqual(movements[0]["amount"], 100)
 
 
 if __name__ == "__main__":

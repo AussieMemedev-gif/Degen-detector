@@ -110,6 +110,7 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
+        [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
         [{"text": "⚙️ Settings", "callback_data": "settings"}],
     ]}
 
@@ -148,6 +149,17 @@ def settings_keyboard() -> Dict[str, Any]:
     ]}
 
 
+def wallet_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "📋 Tracked Wallets", "callback_data": "wallet_list"},
+            {"text": "📡 Check Signals", "callback_data": "wallet_signals"},
+        ],
+        [{"text": "➕ How to Add / Remove", "callback_data": "wallet_help"}],
+        [{"text": "⬅️ Main Menu", "callback_data": "main_menu"}],
+    ]}
+
+
 def send_control_menu(token: str, chat_id: str, message: str) -> None:
     telegram_request(token, "sendMessage", {
         "chat_id": chat_id,
@@ -161,6 +173,14 @@ def send_settings_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": settings_keyboard(),
+    })
+
+
+def send_wallet_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": wallet_keyboard(),
     })
 
 

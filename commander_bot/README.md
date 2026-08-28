@@ -19,6 +19,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Automatic V5 peak-window scanning with intervals, score filtering, duplicate-alert cooldowns, status reporting, and Emergency Stop enforcement
 - Telegram V6 settings menu for changing interval, peak window, score floor, and repeat cooldown without GitHub or Railway
 - Live Hot Token Leaderboard that excludes unsafe, dumping, and severely overextended candidates
+- Read-only Wallet/KOL Tracker with Telegram-managed addresses and new token movement signals
 
 ## Quick start
 

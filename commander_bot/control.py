@@ -4,7 +4,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
-from .notifications import answer_callback, get_updates, send_control_menu, send_settings_menu
+from .notifications import answer_callback, get_updates, send_control_menu, send_settings_menu, send_telegram, send_wallet_menu
 from .storage import Ledger
 
 
@@ -144,6 +144,80 @@ class BotController:
             return "Invalid setting. Example: /interval 7, /window 17 3, or /cooldown 120"
         return None
 
+    def wallets_message(self) -> str:
+        wallets = self.ledger.tracked_wallets()
+        if not wallets:
+            return "👛 WALLET / KOL TRACKER\n\nNo wallets tracked yet.\nUse /track ADDRESS LABEL"
+        lines = ["👛 TRACKED WALLETS", ""]
+        lines.extend(f"• {label}: {address}" for address, label, _ in wallets)
+        lines.append("\nRead-only monitoring. No private keys or wallet access.")
+        return "\n".join(lines)
+
+    def wallet_help_message(self) -> str:
+        return (
+            "👛 WALLET TRACKER COMMANDS\n\n"
+            "Add: /track ADDRESS LABEL\n"
+            "Remove: /untrack ADDRESS\n"
+            "List: /wallets\n"
+            "Check now: /signals\n\n"
+            "Example: /track 7abc...xyz SmartTrader\n"
+            "Only use public wallet addresses. Never send a seed phrase or private key."
+        )
+
+    def handle_wallet_command(self, text: str) -> Optional[str]:
+        parts = text.strip().split(maxsplit=2)
+        command = parts[0].lower() if parts else ""
+        if command == "/track":
+            if len(parts) < 2:
+                return "Use: /track ADDRESS LABEL"
+            from .wallet_tracker import valid_solana_address
+            address = parts[1]
+            if not valid_solana_address(address):
+                return "That does not look like a valid Solana public address."
+            label = parts[2][:40] if len(parts) == 3 else f"Wallet {address[:5]}"
+            self.ledger.add_tracked_wallet(address, label)
+            return f"✅ Tracking {label}. Existing activity is ignored; new movements will generate signals."
+        if command == "/untrack":
+            if len(parts) != 2:
+                return "Use: /untrack ADDRESS"
+            return "✅ Wallet removed." if self.ledger.remove_tracked_wallet(parts[1]) else "Wallet not found."
+        if command == "/wallets":
+            return self.wallets_message()
+        if command == "/signals":
+            return self.check_wallet_signals()
+        return None
+
+    def check_wallet_signals(self) -> str:
+        if self.mode == "EMERGENCY_STOP":
+            return "🚨 Wallet checks blocked: Emergency Stop is enabled."
+        if not self.ledger.tracked_wallets():
+            return "No wallets tracked yet. Use /track ADDRESS LABEL"
+        from .wallet_tracker import poll_wallet_signals
+        messages = poll_wallet_signals(self.settings, self.ledger)
+        if not messages:
+            return "📡 Wallet check complete: no new token movements."
+        for message in messages[:-1]:
+            send_telegram(self.settings.telegram_token, self.settings.telegram_chat_id, message)
+        return messages[-1]
+
+    def maybe_check_wallets(self, now: Optional[datetime] = None) -> None:
+        now = now or datetime.now(timezone.utc)
+        if self.mode == "EMERGENCY_STOP" or not self.ledger.tracked_wallets():
+            return
+        due_text = self.ledger.get_state("next_wallet_check", "")
+        if due_text and now < datetime.fromisoformat(due_text):
+            return
+        self.ledger.set_state(
+            "next_wallet_check",
+            (now + timedelta(seconds=max(30, self.settings.wallet_check_interval_seconds))).isoformat(),
+        )
+        try:
+            from .wallet_tracker import poll_wallet_signals
+            for message in poll_wallet_signals(self.settings, self.ledger):
+                send_telegram(self.settings.telegram_token, self.settings.telegram_chat_id, message)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+            return
+
     def _inside_peak_window(self, now: datetime) -> bool:
         settings = self.automatic_settings()
         try:
@@ -195,6 +269,14 @@ def run_control_bot(settings: Settings) -> None:
                 action = callback.get("data", "")
                 if action == "settings":
                     send_settings_menu(settings.telegram_token, chat_id, controller.settings_message())
+                elif action == "wallet_tracker":
+                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallets_message())
+                elif action == "wallet_list":
+                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallets_message())
+                elif action == "wallet_help":
+                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallet_help_message())
+                elif action == "wallet_signals":
+                    send_wallet_menu(settings.telegram_token, chat_id, controller.check_wallet_signals())
                 elif action == "main_menu":
                     send_control_menu(settings.telegram_token, chat_id, controller.status_message())
                 elif action == "noop":
@@ -205,9 +287,13 @@ def run_control_bot(settings: Settings) -> None:
                     send_control_menu(settings.telegram_token, chat_id, controller.handle(action))
             elif message and str(message.get("chat", {}).get("id", "")) == str(settings.telegram_chat_id):
                 text = message.get("text", "")
-                setting_reply = controller.handle_text_setting(text)
-                if setting_reply:
+                wallet_reply = controller.handle_wallet_command(text)
+                setting_reply = controller.handle_text_setting(text) if wallet_reply is None else None
+                if wallet_reply:
+                    send_wallet_menu(settings.telegram_token, settings.telegram_chat_id, wallet_reply)
+                elif setting_reply:
                     send_settings_menu(settings.telegram_token, settings.telegram_chat_id, setting_reply)
                 elif text.lower() in {"/start", "/menu", "/status"}:
                     send_control_menu(settings.telegram_token, settings.telegram_chat_id, controller.status_message())
         controller.maybe_run_automatic()
+        controller.maybe_check_wallets()

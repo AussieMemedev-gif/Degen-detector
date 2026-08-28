@@ -16,6 +16,9 @@ class Ledger:
             key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
         self.connection.execute("""CREATE TABLE IF NOT EXISTS alert_history (
             mint TEXT PRIMARY KEY, alerted_at TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS tracked_wallets (
+            address TEXT PRIMARY KEY, label TEXT NOT NULL, created_at TEXT NOT NULL,
+            last_signature TEXT NOT NULL DEFAULT '')""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -56,5 +59,30 @@ class Ledger:
             "INSERT INTO alert_history(mint,alerted_at) VALUES(?,?) "
             "ON CONFLICT(mint) DO UPDATE SET alerted_at=excluded.alerted_at",
             (mint, now.astimezone(timezone.utc).isoformat()),
+        )
+        self.connection.commit()
+
+    def add_tracked_wallet(self, address: str, label: str) -> None:
+        self.connection.execute(
+            "INSERT INTO tracked_wallets(address,label,created_at,last_signature) VALUES(?,?,?, '') "
+            "ON CONFLICT(address) DO UPDATE SET label=excluded.label",
+            (address, label, datetime.now(timezone.utc).isoformat()),
+        )
+        self.connection.commit()
+
+    def remove_tracked_wallet(self, address: str) -> bool:
+        cursor = self.connection.execute("DELETE FROM tracked_wallets WHERE address = ?", (address,))
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def tracked_wallets(self) -> list[tuple[str, str, str]]:
+        return self.connection.execute(
+            "SELECT address,label,last_signature FROM tracked_wallets ORDER BY created_at"
+        ).fetchall()
+
+    def set_wallet_cursor(self, address: str, signature: str) -> None:
+        self.connection.execute(
+            "UPDATE tracked_wallets SET last_signature = ? WHERE address = ?",
+            (signature, address),
         )
         self.connection.commit()
