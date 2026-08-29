@@ -10,10 +10,12 @@ from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
 from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_from_pair
-from commander_bot.notifications import format_live_alert
+from commander_bot.notifications import format_live_alert, telegram_request
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
 from commander_bot.paper_copy import portfolio_message, process_wallet_events, trader_rankings_message
 from commander_bot.launchpad_hub import identify_launchpad, _bundle_estimate, _sniper_estimate
+from commander_bot.access import TelegramAccess, parse_telegram_ids, user_database_path
+from commander_bot.notifications import tester_keyboard
 
 
 class CommanderTests(unittest.TestCase):
@@ -221,6 +223,47 @@ class CommanderTests(unittest.TestCase):
         self.assertTrue(0 <= sniper <= 100)
         self.assertEqual(bundle_confidence, "low")
         self.assertEqual(sniper_confidence, "low")
+
+    def test_beta_access_separates_owner_testers_and_unknown_users(self):
+        settings = Settings(
+            telegram_chat_id="111",
+            telegram_owner_id="111",
+            telegram_tester_ids="222, 333 222",
+        )
+        access = TelegramAccess.from_settings(settings)
+        self.assertEqual(access.role("111"), "owner")
+        self.assertEqual(access.role("222"), "tester")
+        self.assertEqual(access.role("999"), "unauthorized")
+        self.assertEqual(parse_telegram_ids("222, 333"), frozenset({"222", "333"}))
+
+    def test_tester_menu_has_no_owner_controls(self):
+        actions = {
+            button["callback_data"]
+            for row in tester_keyboard()["inline_keyboard"]
+            for button in row
+        }
+        self.assertIn("launchpads", actions)
+        self.assertIn("wallet_tracker", actions)
+        self.assertNotIn("automatic", actions)
+        self.assertNotIn("emergency_stop", actions)
+        self.assertNotIn("settings", actions)
+
+    def test_tester_database_paths_are_isolated(self):
+        owner = "commander_bot.db"
+        first = user_database_path(owner, "222")
+        second = user_database_path(owner, "333")
+        self.assertNotEqual(first, owner)
+        self.assertNotEqual(first, second)
+        self.assertEqual(user_database_path(":memory:", "222"), ":memory:")
+
+    @patch("commander_bot.notifications.urllib.request.urlopen")
+    def test_telegram_delete_webhook_request_is_supported(self, urlopen):
+        response = urlopen.return_value.__enter__.return_value
+        response.read.return_value = b'{"ok": true, "result": true}'
+        result = telegram_request("test-token", "deleteWebhook", {"drop_pending_updates": False})
+        self.assertTrue(result["ok"])
+        request = urlopen.call_args.args[0]
+        self.assertIn("deleteWebhook", request.full_url)
 
 
 if __name__ == "__main__":

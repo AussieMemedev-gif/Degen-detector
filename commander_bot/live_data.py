@@ -228,5 +228,8 @@ def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
         best_snapshot, best_decision, settings.bot_display_name
     )
     send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
+    group_id = str(settings.telegram_alert_group_id).strip()
+    if group_id and group_id != str(settings.telegram_chat_id):
+        send_telegram(settings.telegram_token, group_id, message)
     ledger.record_alert(best_snapshot.mint, now)
     return f"Automatic alert sent for {best_snapshot.symbol} ({best_decision.score:.1f}/100)."

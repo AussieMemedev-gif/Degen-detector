@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -88,11 +89,23 @@ def telegram_request(token: str, method: str, payload: Dict[str, Any]) -> Dict[s
         for key, value in payload.items()
     }).encode()
     request = urllib.request.Request(url, data=encoded, method="POST")
-    with urllib.request.urlopen(request, timeout=35) as response:
-        result = json.loads(response.read())
+    try:
+        with urllib.request.urlopen(request, timeout=35) as response:
+            result = json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.loads(error.read()).get("description", str(error))
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            detail = str(error)
+        raise RuntimeError(f"Telegram {method} failed: {detail}") from error
     if not result.get("ok"):
         raise RuntimeError(f"Telegram {method} request failed")
     return result
+
+
+def delete_webhook(token: str) -> None:
+    """Ensure this long-polling service is not blocked by a legacy webhook."""
+    telegram_request(token, "deleteWebhook", {"drop_pending_updates": False})
 
 
 def control_keyboard() -> Dict[str, Any]:
@@ -113,6 +126,19 @@ def control_keyboard() -> Dict[str, Any]:
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
         [{"text": "⚙️ Settings", "callback_data": "settings"}],
+    ]}
+
+
+def tester_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "⚡ Research Scan", "callback_data": "scan_once"},
+            {"text": "📊 My Access", "callback_data": "status"},
+        ],
+        [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
+        [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
+        [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
+        [{"text": "📖 Help / Instructions", "callback_data": "help"}],
     ]}
 
 
@@ -198,6 +224,14 @@ def send_control_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": control_keyboard(),
+    })
+
+
+def send_tester_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": tester_keyboard(),
     })
 
 

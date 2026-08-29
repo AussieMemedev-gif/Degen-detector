@@ -4,9 +4,10 @@ from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import Settings
+from .access import TelegramAccess, user_database_path
 from .notifications import (
-    answer_callback, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
-    send_settings_menu, send_telegram, send_wallet_menu,
+    answer_callback, delete_webhook, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
+    send_settings_menu, send_telegram, send_tester_menu, send_wallet_menu,
 )
 from .storage import Ledger
 
@@ -81,6 +82,30 @@ class BotController:
             f"Mode: {mode}\n"
             f"Trading: PAPER ONLY\n"
             f"Wallet access: DISABLED{detail}{auto_detail}"
+        )
+
+    def tester_status_message(self) -> str:
+        paper_copy = self.ledger.get_state("paper_copy_enabled", "OFF")
+        return (
+            "🧪 DEGEN DETECTOR BETA ACCESS\n"
+            "Role: Approved tester\n"
+            "Research tools: ENABLED\n"
+            "Trading: PAPER ONLY\n"
+            "Wallet access: DISABLED\n"
+            f"Personal paper copy: {paper_copy}\n"
+            "Owner controls and live execution: LOCKED"
+        )
+
+    def help_message(self) -> str:
+        return (
+            "📖 DEGEN DETECTOR BETA HELP\n\n"
+            "⚡ Research Scan — analyse current candidates.\n"
+            "🔥 Leaderboard — rank candidates that pass safety checks.\n"
+            "🚀 Launchpads / PF — inspect Solana launch sources.\n"
+            "👛 Wallet Tracker — monitor public addresses only.\n"
+            "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
+            "Use the bot in this private chat. Never send a seed phrase or private key. "
+            "All beta results are research and simulation, not trade execution."
         )
 
     def handle(self, action: str) -> str:
@@ -301,10 +326,31 @@ class BotController:
 
 
 def run_control_bot(settings: Settings) -> None:
-    if not settings.telegram_token or not settings.telegram_chat_id:
-        raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID before starting controls.")
-    controller = BotController(settings)
-    send_control_menu(settings.telegram_token, settings.telegram_chat_id, "Degen Detector controls are online.")
+    access = TelegramAccess.from_settings(settings)
+    if not settings.telegram_token or not access.owner_id:
+        raise SystemExit("Set TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_ID before starting controls.")
+    owner_settings = replace(settings, telegram_chat_id=access.owner_id)
+    controller = BotController(owner_settings)
+    tester_controllers: dict[str, BotController] = {}
+
+    def tester_controller(chat_id: str) -> BotController:
+        if chat_id not in tester_controllers:
+            tester_settings = replace(
+                settings,
+                telegram_chat_id=chat_id,
+                database_path=user_database_path(settings.database_path, chat_id),
+            )
+            tester_controllers[chat_id] = BotController(tester_settings)
+        return tester_controllers[chat_id]
+
+    def send_main_menu(chat_id: str, role: str, active: BotController) -> None:
+        if role == "owner":
+            send_control_menu(settings.telegram_token, chat_id, active.status_message())
+        else:
+            send_tester_menu(settings.telegram_token, chat_id, active.tester_status_message())
+
+    delete_webhook(settings.telegram_token)
+    send_control_menu(settings.telegram_token, access.owner_id, "Degen Detector controls are online.")
     offset: Optional[int] = None
     while True:
         for update in get_updates(settings.telegram_token, offset, settings.telegram_poll_seconds):
@@ -313,44 +359,99 @@ def run_control_bot(settings: Settings) -> None:
             message = update.get("message")
             if callback:
                 chat_id = str(callback.get("message", {}).get("chat", {}).get("id", ""))
-                if chat_id != str(settings.telegram_chat_id):
+                user_id = str(callback.get("from", {}).get("id", ""))
+                chat_type = str(callback.get("message", {}).get("chat", {}).get("type", "private"))
+                role = access.role(user_id)
+                if chat_type != "private" or role == "unauthorized":
                     answer_callback(settings.telegram_token, callback["id"], "Not authorized")
                     continue
                 answer_callback(settings.telegram_token, callback["id"])
                 action = callback.get("data", "")
-                if action == "settings":
-                    send_settings_menu(settings.telegram_token, chat_id, controller.settings_message())
+                active = controller if role == "owner" else tester_controller(chat_id)
+                owner_only = {
+                    "settings", "manual_on", "stop", "automatic", "emergency_stop",
+                }
+                if role != "owner" and (
+                    action in owner_only or action.startswith(("interval_", "window_", "score_", "cooldown_"))
+                ):
+                    send_tester_menu(settings.telegram_token, chat_id, "🔒 Owner-only control.")
+                elif action == "settings":
+                    send_settings_menu(settings.telegram_token, chat_id, active.settings_message())
                 elif action == "wallet_tracker":
-                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallets_message())
+                    send_wallet_menu(settings.telegram_token, chat_id, active.wallets_message())
                 elif action == "wallet_list":
-                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallets_message())
+                    send_wallet_menu(settings.telegram_token, chat_id, active.wallets_message())
                 elif action == "wallet_help":
-                    send_wallet_menu(settings.telegram_token, chat_id, controller.wallet_help_message())
+                    send_wallet_menu(settings.telegram_token, chat_id, active.wallet_help_message())
                 elif action == "wallet_signals":
-                    send_wallet_menu(settings.telegram_token, chat_id, controller.check_wallet_signals())
+                    send_wallet_menu(settings.telegram_token, chat_id, active.check_wallet_signals())
                 elif action == "paper_copy":
-                    send_paper_copy_menu(settings.telegram_token, chat_id, controller.paper_copy_message())
+                    send_paper_copy_menu(settings.telegram_token, chat_id, active.paper_copy_message())
                 elif action == "launchpads" or action.startswith("launch_"):
-                    send_launchpad_menu(settings.telegram_token, chat_id, controller.launchpad_message(action))
+                    send_launchpad_menu(settings.telegram_token, chat_id, active.launchpad_message(action))
                 elif action.startswith("paper_"):
-                    send_paper_copy_menu(settings.telegram_token, chat_id, controller.handle_paper_action(action))
+                    send_paper_copy_menu(settings.telegram_token, chat_id, active.handle_paper_action(action))
                 elif action == "main_menu":
-                    send_control_menu(settings.telegram_token, chat_id, controller.status_message())
+                    send_main_menu(chat_id, role, active)
+                elif action == "help":
+                    send_tester_menu(settings.telegram_token, chat_id, active.help_message())
                 elif action == "noop":
                     continue
                 elif action.startswith(("interval_", "window_", "score_", "cooldown_")):
-                    send_settings_menu(settings.telegram_token, chat_id, controller.set_preference(action))
+                    send_settings_menu(settings.telegram_token, chat_id, active.set_preference(action))
                 else:
-                    send_control_menu(settings.telegram_token, chat_id, controller.handle(action))
-            elif message and str(message.get("chat", {}).get("id", "")) == str(settings.telegram_chat_id):
+                    reply = active.tester_status_message() if role == "tester" and action == "status" else active.handle(action)
+                    if role == "owner":
+                        send_control_menu(settings.telegram_token, chat_id, reply)
+                    else:
+                        send_tester_menu(settings.telegram_token, chat_id, reply)
+            elif message:
+                chat = message.get("chat", {})
+                chat_id = str(chat.get("id", ""))
+                chat_type = str(chat.get("type", "private"))
+                user_id = str(message.get("from", {}).get("id", ""))
                 text = message.get("text", "")
-                wallet_reply = controller.handle_wallet_command(text)
-                setting_reply = controller.handle_text_setting(text) if wallet_reply is None else None
+                if chat_type != "private":
+                    group_command = text.lower().split("@", 1)[0]
+                    if group_command == "/groupid" and access.role(user_id) == "owner":
+                        send_telegram(
+                            settings.telegram_token,
+                            chat_id,
+                            f"🔐 Degen Detector alert group ID: {chat_id}\nInteractive controls remain private-chat only.",
+                        )
+                    elif group_command in {"/start", "/menu"}:
+                        send_telegram(
+                            settings.telegram_token,
+                            chat_id,
+                            "For privacy and account safety, open Degen Detector directly and press Start in a private chat.",
+                        )
+                    continue
+                role = access.role(user_id)
+                if role == "unauthorized":
+                    if text.lower() in {"/start", "/menu", "/id", "/whoami"}:
+                        send_telegram(
+                            settings.telegram_token,
+                            chat_id,
+                            "🔐 Beta access is pending.\n"
+                            f"Your Telegram ID: {user_id}\n\n"
+                            "Send this numeric ID to the Degen Detector owner. Never send a password, seed phrase or private key.",
+                        )
+                    continue
+                active = controller if role == "owner" else tester_controller(chat_id)
+                wallet_reply = active.handle_wallet_command(text)
+                setting_reply = active.handle_text_setting(text) if role == "owner" and wallet_reply is None else None
                 if wallet_reply:
-                    send_wallet_menu(settings.telegram_token, settings.telegram_chat_id, wallet_reply)
+                    send_wallet_menu(settings.telegram_token, chat_id, wallet_reply)
                 elif setting_reply:
-                    send_settings_menu(settings.telegram_token, settings.telegram_chat_id, setting_reply)
+                    send_settings_menu(settings.telegram_token, chat_id, setting_reply)
                 elif text.lower() in {"/start", "/menu", "/status"}:
-                    send_control_menu(settings.telegram_token, settings.telegram_chat_id, controller.status_message())
+                    send_main_menu(chat_id, role, active)
+                elif text.lower() in {"/help", "/instructions"}:
+                    if role == "owner":
+                        send_control_menu(settings.telegram_token, chat_id, active.help_message())
+                    else:
+                        send_tester_menu(settings.telegram_token, chat_id, active.help_message())
         controller.maybe_run_automatic()
         controller.maybe_check_wallets()
+        for active in tester_controllers.values():
+            active.maybe_check_wallets()

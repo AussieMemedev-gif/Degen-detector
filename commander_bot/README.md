@@ -23,6 +23,8 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Opt-in V9 Paper Copy simulator with fixed-size positions, a paper portfolio, and experimental tracked-trader rankings
 - Stage 10 Solana Launchpad Hub with PF, BONK, Raydium, Meteora, Jupiter, and Qualified 75+ filters
 - Direct Pump.fun links plus clearly labelled screening estimates for sniper/bundle activity
+- Beta tester allowlist with server-enforced owner/tester roles and isolated tester databases
+- Legacy Telegram webhook cleanup before long polling to prevent HTTP 409 conflicts
 
 ## Quick start
 
@@ -33,6 +35,8 @@ python -m unittest discover -s commander_bot/tests -v
 ```
 
 Set the environment variables shown in `.env.example` in the hosting dashboard. Never paste bot tokens or wallet private keys into Telegram or source code. Send `/start` to the bot after the control service starts.
+
+For beta access, keep `TELEGRAM_OWNER_ID` set to the owner's numeric Telegram user ID and put approved private-chat user IDs in `TELEGRAM_TESTER_IDS` as a comma-separated list. `TELEGRAM_CHAT_ID` remains supported as the owner-ID fallback. An unapproved user can privately send `/start` to receive their numeric ID for approval. Testers receive research, launchpad, read-only wallet tracking and isolated paper-trading tools; global scan scheduling, settings, stop controls and emergency controls remain owner-only. Interactive commands in groups are deliberately refused. Optionally send `/groupid` in a group from the owner account, then set the returned negative ID as `TELEGRAM_ALERT_GROUP_ID` to publish the same paper-only automatic research alert in that group.
 
 The control buttons operate the safe paper pipeline. `Automatic` runs scans only inside its configured local-time peak window, applies an alert score floor, and suppresses repeated alerts. Manual sessions declare a configurable expiry. Emergency Stop blocks manual and automatic scanning.
 
