@@ -10,14 +10,18 @@ from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
 from commander_bot.live_data import (
-    format_hot_leaderboard, format_scan_summary, hot_score, snapshot_from_pair, visible_scan_results,
+    format_hot_leaderboard, format_scan_summary, hot_score, investigated_scan_results,
+    research_class, snapshot_from_pair, visible_scan_results,
 )
-from commander_bot.notifications import format_live_alert, telegram_request
+from commander_bot.notifications import (
+    format_live_alert, practice_keyboard, research_result_keyboard, telegram_request,
+)
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
 from commander_bot.paper_copy import portfolio_message, process_wallet_events, trader_rankings_message
 from commander_bot.launchpad_hub import identify_launchpad, _bundle_estimate, _sniper_estimate
 from commander_bot.access import TelegramAccess, parse_telegram_ids, user_database_path
 from commander_bot.notifications import tester_keyboard
+from commander_bot.practice_trading import PracticeTrading
 
 
 class CommanderTests(unittest.TestCase):
@@ -277,10 +281,24 @@ class CommanderTests(unittest.TestCase):
         visible = visible_scan_results(results, 10)
         self.assertEqual(len(visible), 10)
         self.assertTrue(all(decision.status != "REJECTED" for _, decision in visible))
-        summary = format_scan_summary(visible, len(safe_results), len(results), len(results), 75, 10)
+        summary = format_scan_summary(visible, results, len(results), len(results), 75, 10)
         self.assertIn("Showing: 10 of up to 10", summary)
-        self.assertIn("Unsafe/incomplete excluded: 1", summary)
-        self.assertIn("Additional safe candidates not shown: 2", summary)
+        self.assertIn("Rejected investigations: 1", summary)
+
+    def test_investigation_scan_can_show_rejected_tokens_without_qualifying_them(self):
+        safe = replace(demo_candidate(), mint="safe", symbol="SAFE")
+        rejected = replace(demo_candidate(), mint="risk", symbol="RISK", liquidity_usd=1_000, sellable=False)
+        results = [(safe, self.commander.decide(safe)), (rejected, self.commander.decide(rejected))]
+        displayed = investigated_scan_results(results, 10, 75)
+        self.assertEqual(len(displayed), 2)
+        self.assertEqual(research_class(displayed[0][1], 75), "QUALIFIED RESEARCH")
+        self.assertEqual(research_class(displayed[1][1], 75), "REJECTED INVESTIGATION")
+        self.assertEqual(displayed[1][1].paper_position_usd, 0)
+        summary = format_scan_summary(
+            displayed, results, 2, 3, 75, 10, {"On-chain verification incomplete": 1}
+        )
+        self.assertIn("Incomplete data: 1", summary)
+        self.assertIn("sellability check failed", summary)
 
     def test_tester_scan_cooldown_prevents_repeated_api_use(self):
         controller = BotController(Settings(database_path=":memory:", tester_scan_cooldown_seconds=90))
@@ -298,6 +316,92 @@ class CommanderTests(unittest.TestCase):
             ledger = Ledger(path)
             ledger.set_state("persistent", "yes")
             self.assertEqual(ledger.get_state("persistent"), "yes")
+
+    def test_practice_terminal_buy_partial_sell_and_performance(self):
+        settings = Settings(
+            database_path=":memory:", practice_starting_balance_usd=10_000,
+            practice_hourly_buy_limit_usd=1_000, practice_fee_pct=0.5,
+            practice_slippage_pct=1,
+        )
+        ledger = Ledger(":memory:")
+        practice = PracticeTrading(settings, ledger)
+        ledger.set_state("practice_selected_mint", "demo-mint")
+        ledger.set_state("practice_selected_symbol", "DEMO")
+        now = datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc)
+        buy = practice.buy_sol(1, token_price=2, sol_price=100, now=now)
+        self.assertIn("PAPER BUY FILLED", buy)
+        self.assertAlmostEqual(ledger.practice_cash(), 9_899.50)
+        position = ledger.practice_position("demo-mint")
+        self.assertAlmostEqual(position[2], 100 / 2.02)
+        self.assertAlmostEqual(practice.hourly_remaining(now), 899.50)
+        sold = practice.sell_percent(50, token_price=4, now=now)
+        self.assertIn("PAPER SELL FILLED", sold)
+        self.assertGreater(ledger.practice_statistics()[2], 0)
+        self.assertAlmostEqual(ledger.practice_position("demo-mint")[2], position[2] / 2)
+        self.assertIn("DEMO", practice.history_message())
+        self.assertIn("100.0%", practice.pnl_message(price_lookup=lambda _: 4))
+        self.assertIn("DEMO", practice.top_gains_message())
+        closed = practice.sell_percent(100, token_price=4, now=now)
+        self.assertIn("PAPER SELL FILLED", closed)
+        self.assertIsNone(ledger.practice_position("demo-mint"))
+
+    def test_practice_terminal_enforces_rolling_hourly_buy_limit(self):
+        settings = Settings(
+            database_path=":memory:", practice_starting_balance_usd=10_000,
+            practice_hourly_buy_limit_usd=1_000, practice_fee_pct=0.5,
+            practice_slippage_pct=1,
+        )
+        ledger = Ledger(":memory:")
+        practice = PracticeTrading(settings, ledger)
+        ledger.set_state("practice_selected_mint", "demo-mint")
+        ledger.set_state("practice_selected_symbol", "DEMO")
+        blocked = practice.buy_sol(
+            10, token_price=2, sol_price=100,
+            now=datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc),
+        )
+        self.assertIn("Hourly paper-buy limit exceeded", blocked)
+        self.assertEqual(ledger.practice_cash(), 10_000)
+        self.assertEqual(ledger.practice_history(), [])
+
+    def test_practice_interface_has_required_safe_controls(self):
+        keyboard = practice_keyboard("https://dexscreener.com/solana/demo")
+        actions = {
+            button.get("callback_data")
+            for row in keyboard["inline_keyboard"] for button in row
+            if button.get("callback_data")
+        }
+        for action in {
+            "practice_profile", "practice_wallet", "practice_history", "practice_pnl", "practice_gains",
+            "practice_buy_0_5", "practice_buy_1", "practice_buy_2_5",
+            "practice_buy_5", "practice_buy_10", "practice_sell_25",
+            "practice_sell_50", "practice_sell_75", "practice_sell_100",
+            "practice_instant_sell",
+        }:
+            self.assertIn(action, actions)
+        self.assertFalse(any("live" in (action or "") for action in actions))
+        mint = "11111111111111111111111111111111"
+        result_keyboard = research_result_keyboard(mint, "https://dexscreener.com/solana/demo")
+        callback = result_keyboard["inline_keyboard"][0][0]["callback_data"]
+        self.assertEqual(callback, f"practice_select:{mint}")
+        self.assertLessEqual(len(callback.encode()), 64)
+
+    def test_practice_accounts_are_isolated_per_user_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first_path = f"{directory}/user-1.db"
+            second_path = f"{directory}/user-2.db"
+            settings = Settings(
+                practice_starting_balance_usd=10_000, practice_hourly_buy_limit_usd=1_000,
+                practice_fee_pct=0.5, practice_slippage_pct=1,
+            )
+            first = Ledger(first_path)
+            second = Ledger(second_path)
+            first_terminal = PracticeTrading(settings, first)
+            PracticeTrading(settings, second)
+            first.set_state("practice_selected_mint", "demo-mint")
+            first.set_state("practice_selected_symbol", "DEMO")
+            first_terminal.buy_sol(1, token_price=2, sol_price=100)
+            self.assertLess(first.practice_cash(), second.practice_cash())
+            self.assertEqual(second.practice_positions(), [])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from .config import Settings
 from .access import TelegramAccess, user_database_path
 from .notifications import (
     answer_callback, delete_webhook, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
-    send_settings_menu, send_telegram, send_tester_menu, send_wallet_menu,
+    send_practice_menu, send_settings_menu, send_telegram, send_tester_menu, send_wallet_menu,
 )
 from .storage import Ledger
 
@@ -101,18 +101,103 @@ class BotController:
     def help_message(self) -> str:
         return (
             "📖 DEGEN DETECTOR BETA HELP\n\n"
-            "⚡ Research Scan — show up to 10 ranked candidates that pass hard safety vetoes.\n"
+            "⚡ Research Scan — show up to 10 investigated candidates with green, amber or red status.\n"
             "🟢 Qualified — score meets the 75+ research threshold.\n"
             "🟡 Watchlist — passed hard vetoes but remains below the qualification threshold.\n"
+            "🔴 Rejected — failed one or more hard safety checks; investigation only.\n"
             "🔥 Leaderboard — rank safe candidates by momentum and holding strength.\n"
             "🚀 Launchpads / PF — inspect Solana launch sources.\n"
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
+            "🎮 Practice Trade — trade live-priced tokens with isolated fake funds. "
+            "Choose Paper Trade below a scan result or use /trade TOKEN_MINT SYMBOL. "
+            "The terminal includes fixed SOL buys, 25/50/75/100% exits, instant paper sell, "
+            "wallet, history, all-time P&L and top gains.\n\n"
             f"Research scans have a {max(30, self.settings.tester_scan_cooldown_seconds)}-second tester cooldown. "
-            "The bot never fills a list with rejected tokens just to reach ten.\n\n"
+            "Rejected reports explain risk failures and can never create paper trades.\n\n"
             "Use the bot in this private chat. Never send a seed phrase or private key. "
             "All beta results are research and simulation, not trade execution."
         )
+
+    def _practice(self):
+        from .practice_trading import PracticeTrading
+        return PracticeTrading(self.settings, self.ledger)
+
+    def practice_message(self) -> str:
+        return self._practice().terminal_message()
+
+    def practice_chart(self) -> str:
+        return self._practice().selected_chart
+
+    def select_practice_token(self, mint: str, symbol: str = "") -> str:
+        from .wallet_tracker import valid_solana_address
+        if not valid_solana_address(mint):
+            return "That does not look like a valid Solana token mint."
+        practice = self._practice()
+        try:
+            selected = practice.select_token(mint, symbol)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+            return "⚠️ Live token data is unavailable. Nothing was selected."
+        return selected + "\n\n" + practice.terminal_message()
+
+    def handle_practice_action(self, action: str) -> str:
+        practice = self._practice()
+        if action == "practice_snipe":
+            return (
+                "🎯 PAPER SNIPE MODE READY\n"
+                "Use a SOL-size button below for an immediate simulated fill at the latest quote. "
+                "Fees, slippage, cash and the hourly cap still apply.\n\n"
+                + practice.terminal_message()
+            )
+        if action in {"practice_dashboard", "practice_refresh"}:
+            return practice.terminal_message()
+        if action == "practice_wallet":
+            return practice.wallet_message()
+        if action == "practice_profile":
+            return practice.profile_message()
+        if action == "practice_history":
+            return practice.history_message()
+        if action == "practice_pnl":
+            return practice.pnl_message()
+        if action == "practice_gains":
+            return practice.top_gains_message()
+        buy_sizes = {
+            "practice_buy_0_5": 0.5,
+            "practice_buy_1": 1.0,
+            "practice_buy_2_5": 2.5,
+            "practice_buy_5": 5.0,
+            "practice_buy_10": 10.0,
+        }
+        if action in buy_sizes:
+            return practice.buy_sol(buy_sizes[action])
+        if action == "practice_instant_sell":
+            return practice.sell_percent(100)
+        if action.startswith("practice_sell_"):
+            try:
+                return practice.sell_percent(int(action.rsplit("_", 1)[1]))
+            except ValueError:
+                pass
+        return practice.terminal_message()
+
+    def handle_practice_command(self, text: str) -> Optional[str]:
+        parts = text.strip().split(maxsplit=2)
+        command = parts[0].lower() if parts else ""
+        if command == "/trade":
+            if len(parts) < 2:
+                return "Use: /trade TOKEN_MINT SYMBOL"
+            symbol = parts[2] if len(parts) == 3 else ""
+            return self.select_practice_token(parts[1], symbol)
+        if command == "/paperwallet":
+            return self._practice().wallet_message()
+        if command == "/paperprofile":
+            return self._practice().profile_message()
+        if command == "/paperhistory":
+            return self._practice().history_message()
+        if command == "/paperpnl":
+            return self._practice().pnl_message()
+        if command == "/papergains":
+            return self._practice().top_gains_message()
+        return None
 
     def handle_tester_scan(self, now: Optional[datetime] = None) -> str:
         now = now or datetime.now(timezone.utc)
@@ -410,6 +495,15 @@ def run_control_bot(settings: Settings) -> None:
                     send_wallet_menu(settings.telegram_token, chat_id, active.check_wallet_signals())
                 elif action == "paper_copy":
                     send_paper_copy_menu(settings.telegram_token, chat_id, active.paper_copy_message())
+                elif action.startswith("practice_select:"):
+                    mint = action.split(":", 1)[1]
+                    send_practice_menu(
+                        settings.telegram_token, chat_id, active.select_practice_token(mint), active.practice_chart()
+                    )
+                elif action == "practice_dashboard" or action.startswith("practice_"):
+                    send_practice_menu(
+                        settings.telegram_token, chat_id, active.handle_practice_action(action), active.practice_chart()
+                    )
                 elif action == "launchpads" or action.startswith("launch_"):
                     send_launchpad_menu(settings.telegram_token, chat_id, active.launchpad_message(action))
                 elif action.startswith("paper_"):
@@ -466,9 +560,17 @@ def run_control_bot(settings: Settings) -> None:
                         )
                     continue
                 active = controller if role == "owner" else tester_controller(chat_id)
-                wallet_reply = active.handle_wallet_command(text)
-                setting_reply = active.handle_text_setting(text) if role == "owner" and wallet_reply is None else None
-                if wallet_reply:
+                practice_reply = active.handle_practice_command(text)
+                wallet_reply = active.handle_wallet_command(text) if practice_reply is None else None
+                setting_reply = (
+                    active.handle_text_setting(text)
+                    if role == "owner" and practice_reply is None and wallet_reply is None else None
+                )
+                if practice_reply:
+                    send_practice_menu(
+                        settings.telegram_token, chat_id, practice_reply, active.practice_chart()
+                    )
+                elif wallet_reply:
                     send_wallet_menu(settings.telegram_token, chat_id, wallet_reply)
                 elif setting_reply:
                     send_settings_menu(settings.telegram_token, chat_id, setting_reply)

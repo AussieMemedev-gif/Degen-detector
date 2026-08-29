@@ -122,6 +122,7 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🕒 Automatic", "callback_data": "automatic"},
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
+        [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
@@ -135,6 +136,7 @@ def tester_keyboard() -> Dict[str, Any]:
             {"text": "⚡ Research Scan", "callback_data": "scan_once"},
             {"text": "📊 My Access", "callback_data": "status"},
         ],
+        [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
@@ -219,6 +221,53 @@ def launchpad_keyboard() -> Dict[str, Any]:
     ]}
 
 
+def practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [
+        [{"text": "👤 My Practice Profile", "callback_data": "practice_profile"}],
+        [
+            {"text": "👛 Wallet", "callback_data": "practice_wallet"},
+            {"text": "📜 History", "callback_data": "practice_history"},
+        ],
+        [
+            {"text": "📊 All-Time P&L", "callback_data": "practice_pnl"},
+            {"text": "🏆 Top 10 Gains", "callback_data": "practice_gains"},
+        ],
+        [
+            {"text": "🎯 Paper Snipe", "callback_data": "practice_snipe"},
+            {"text": "🔄 Refresh", "callback_data": "practice_refresh"},
+        ],
+        [{"text": "PAPER BUY — SOL SIZE", "callback_data": "noop"}],
+        [
+            {"text": "0.5", "callback_data": "practice_buy_0_5"},
+            {"text": "1", "callback_data": "practice_buy_1"},
+            {"text": "2.5", "callback_data": "practice_buy_2_5"},
+            {"text": "5", "callback_data": "practice_buy_5"},
+            {"text": "10", "callback_data": "practice_buy_10"},
+        ],
+        [{"text": "PAPER SELL — POSITION %", "callback_data": "noop"}],
+        [
+            {"text": "25%", "callback_data": "practice_sell_25"},
+            {"text": "50%", "callback_data": "practice_sell_50"},
+            {"text": "75%", "callback_data": "practice_sell_75"},
+            {"text": "100%", "callback_data": "practice_sell_100"},
+        ],
+        [{"text": "⚡ INSTANT PAPER SELL", "callback_data": "practice_instant_sell"}],
+    ]
+    if chart_url.startswith(("https://", "http://")):
+        rows.append([{"text": "📈 Open Live Chart", "url": chart_url}])
+    rows.append([{"text": "⬅️ Main Menu", "callback_data": "main_menu"}])
+    return {"inline_keyboard": rows}
+
+
+def research_result_keyboard(mint: str, chart_url: str = "") -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [[
+        {"text": "🎯 Paper Trade", "callback_data": f"practice_select:{mint}"},
+    ]]
+    if chart_url.startswith(("https://", "http://")):
+        rows[0].append({"text": "📈 Live Chart", "url": chart_url})
+    return {"inline_keyboard": rows}
+
+
 def send_control_menu(token: str, chat_id: str, message: str) -> None:
     telegram_request(token, "sendMessage", {
         "chat_id": chat_id,
@@ -264,6 +313,26 @@ def send_launchpad_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": launchpad_keyboard(),
+        "disable_web_page_preview": True,
+    })
+
+
+def send_practice_menu(token: str, chat_id: str, message: str, chart_url: str = "") -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": practice_keyboard(chart_url),
+        "disable_web_page_preview": True,
+    })
+
+
+def send_research_result(
+    token: str, chat_id: str, message: str, mint: str, chart_url: str = "",
+) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": research_result_keyboard(mint, chart_url),
         "disable_web_page_preview": True,
     })
 

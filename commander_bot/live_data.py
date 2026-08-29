@@ -9,7 +9,7 @@ from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, Soci
 from .commander import ChiefCommander
 from .config import Settings
 from .models import CommanderDecision, TokenSnapshot
-from .notifications import format_live_alert, send_telegram
+from .notifications import format_live_alert, send_research_result, send_telegram
 from .storage import Ledger
 
 
@@ -53,7 +53,12 @@ def best_pair(mint: str) -> Dict[str, Any]:
     solana_pairs = [pair for pair in pairs if pair.get("chainId") == "solana"] if isinstance(pairs, list) else []
     if not solana_pairs:
         raise ValueError("no active Solana pair")
-    return max(solana_pairs, key=lambda pair: float((pair.get("liquidity") or {}).get("usd") or 0))
+    base_pairs = [
+        pair for pair in solana_pairs
+        if str((pair.get("baseToken") or {}).get("address") or "") == mint
+    ]
+    candidates = base_pairs or solana_pairs
+    return max(candidates, key=lambda pair: float((pair.get("liquidity") or {}).get("usd") or 0))
 
 
 def helius_rpc(api_key: str, method: str, params: List[Any]) -> Dict[str, Any]:
@@ -124,17 +129,36 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
     )
 
 
-def analyse_candidates(settings: Settings, mints: Iterable[str]) -> List[tuple[TokenSnapshot, CommanderDecision]]:
+def analyse_candidates_with_diagnostics(
+    settings: Settings, mints: Iterable[str]
+) -> tuple[List[tuple[TokenSnapshot, CommanderDecision]], Dict[str, int]]:
     agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
     commander = ChiefCommander(agents, settings)
     results: List[tuple[TokenSnapshot, CommanderDecision]] = []
+    diagnostics: Dict[str, int] = {}
     for mint in mints:
         try:
-            snapshot = snapshot_from_pair(mint, best_pair(mint), onchain_risk(mint, settings.helius_api_key))
+            pair = best_pair(mint)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            diagnostics["DEX/pair data unavailable"] = diagnostics.get("DEX/pair data unavailable", 0) + 1
+            continue
+        try:
+            risk = onchain_risk(mint, settings.helius_api_key)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            diagnostics["On-chain verification incomplete"] = diagnostics.get("On-chain verification incomplete", 0) + 1
+            continue
+        try:
+            snapshot = snapshot_from_pair(mint, pair, risk)
             results.append((snapshot, commander.decide(snapshot)))
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            diagnostics["Invalid market data"] = diagnostics.get("Invalid market data", 0) + 1
             continue
-    return sorted(results, key=lambda item: item[1].score, reverse=True)
+    return sorted(results, key=lambda item: item[1].score, reverse=True), diagnostics
+
+
+def analyse_candidates(settings: Settings, mints: Iterable[str]) -> List[tuple[TokenSnapshot, CommanderDecision]]:
+    results, _ = analyse_candidates_with_diagnostics(settings, mints)
+    return results
 
 
 def hot_score(snapshot: TokenSnapshot, decision: CommanderDecision) -> float:
@@ -205,34 +229,73 @@ def visible_scan_results(
     return safe[:max(1, min(10, limit))]
 
 
+def research_class(decision: CommanderDecision, qualified_score: float) -> str:
+    if decision.status == "REJECTED" or decision.vetoes:
+        return "REJECTED INVESTIGATION"
+    if decision.score >= qualified_score:
+        return "QUALIFIED RESEARCH"
+    return "WATCHLIST RESEARCH"
+
+
+def investigated_scan_results(
+    results: List[tuple[TokenSnapshot, CommanderDecision]], limit: int, qualified_score: float
+) -> List[tuple[TokenSnapshot, CommanderDecision]]:
+    """Rank green first, amber second and rejected investigations last."""
+    priority = {
+        "QUALIFIED RESEARCH": 0,
+        "WATCHLIST RESEARCH": 1,
+        "REJECTED INVESTIGATION": 2,
+    }
+    ranked = sorted(
+        results,
+        key=lambda item: (priority[research_class(item[1], qualified_score)], -item[1].score),
+    )
+    return ranked[:max(1, min(10, limit))]
+
+
 def format_scan_summary(
-    visible: List[tuple[TokenSnapshot, CommanderDecision]],
-    safe_count: int,
+    displayed: List[tuple[TokenSnapshot, CommanderDecision]],
+    all_results: List[tuple[TokenSnapshot, CommanderDecision]],
     analysed_count: int,
     discovered_count: int,
     qualified_score: float,
     result_limit: int,
+    diagnostics: Dict[str, int] | None = None,
 ) -> str:
-    qualified = sum(decision.score >= qualified_score for _, decision in visible)
-    watchlist = len(visible) - qualified
-    excluded = max(0, discovered_count - safe_count)
-    additional_safe = max(0, safe_count - len(visible))
-    return (
+    classes = [research_class(decision, qualified_score) for _, decision in all_results]
+    qualified = classes.count("QUALIFIED RESEARCH")
+    watchlist = classes.count("WATCHLIST RESEARCH")
+    rejected = classes.count("REJECTED INVESTIGATION")
+    incomplete = max(0, discovered_count - analysed_count)
+    lines = [
         "🔎 DEGEN DETECTOR RESEARCH SCAN\n"
         f"Analysed successfully: {analysed_count}/{discovered_count}\n"
         f"Qualified research: {qualified} ({qualified_score:.0f}+)\n"
         f"Watchlist research: {watchlist}\n"
-        f"Unsafe/incomplete excluded: {excluded}\n"
-        f"Showing: {len(visible)} of up to {max(1, min(10, result_limit))}\n"
-        + (f"Additional safe candidates not shown: {additional_safe}\n" if additional_safe else "")
-        + "\n"
-        "Results are ranked research observations, not instructions to trade."
+        f"Rejected investigations: {rejected}\n"
+        f"Incomplete data: {incomplete}\n"
+        f"Showing: {len(displayed)} of up to {max(1, min(10, result_limit))}\n"
+    ]
+    if diagnostics:
+        lines.append("\nINCOMPLETE-DATA BREAKDOWN\n")
+        lines.extend(f"• {reason}: {count}\n" for reason, count in sorted(diagnostics.items()))
+    veto_counts: Dict[str, int] = {}
+    for _, decision in all_results:
+        for veto in decision.vetoes:
+            veto_counts[veto] = veto_counts.get(veto, 0) + 1
+    if veto_counts:
+        lines.append("\nREJECTION BREAKDOWN\n")
+        lines.extend(f"• {reason}: {count}\n" for reason, count in sorted(veto_counts.items()))
+    lines.append("\n🟢 Qualified | 🟡 Watchlist | 🔴 Rejected investigation\n")
+    lines.append(
+        "Rejected tokens cannot create automatic paper positions; manual Practice Trade remains fake-money education."
     )
+    return "".join(lines)
 
 
 def run_live_scan(settings: Settings) -> str:
     mints = discover_mints(max(1, settings.live_candidate_limit))
-    results = analyse_candidates(settings, mints)
+    results, diagnostics = analyse_candidates_with_diagnostics(settings, mints)
     if not results:
         message = "🔎 Live scan completed: no candidates passed data-integrity checks. No paper trade created."
         send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
@@ -240,27 +303,30 @@ def run_live_scan(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-    visible = visible_scan_results(results, settings.scan_result_limit)
-    safe_count = sum(
-        decision.status != "REJECTED" and not decision.vetoes
-        for _, decision in results
-    )
+    displayed = investigated_scan_results(results, settings.scan_result_limit, settings.scan_qualified_score)
     summary = format_scan_summary(
-        visible,
-        safe_count=safe_count,
+        displayed,
+        all_results=results,
         analysed_count=len(results),
         discovered_count=len(mints),
         qualified_score=settings.scan_qualified_score,
         result_limit=settings.scan_result_limit,
+        diagnostics=diagnostics,
     )
     send_telegram(settings.telegram_token, settings.telegram_chat_id, summary)
-    for index, (snapshot, decision) in enumerate(visible, start=1):
-        label = "QUALIFIED RESEARCH" if decision.score >= settings.scan_qualified_score else "WATCHLIST RESEARCH"
+    for index, (snapshot, decision) in enumerate(displayed, start=1):
+        label = research_class(decision, settings.scan_qualified_score)
         message = (
-            f"📌 RESULT {index}/{len(visible)} — {label}\n"
+            f"📌 RESULT {index}/{len(displayed)} — {label}\n"
             + format_live_alert(snapshot, decision, settings.bot_display_name)
         )
-        send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
+        send_research_result(
+            settings.telegram_token,
+            settings.telegram_chat_id,
+            message,
+            snapshot.mint,
+            snapshot.chart_url,
+        )
     return summary
 
 

@@ -29,6 +29,18 @@ class Ledger:
             entry_signature TEXT NOT NULL, closed_at TEXT NOT NULL DEFAULT '',
             exit_price REAL NOT NULL DEFAULT 0, exit_signature TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'OPEN', realized_pnl_usd REAL NOT NULL DEFAULT 0)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS practice_account (
+            id INTEGER PRIMARY KEY CHECK(id = 1), cash_usd REAL NOT NULL,
+            starting_balance_usd REAL NOT NULL, created_at TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS practice_positions (
+            mint TEXT PRIMARY KEY, symbol TEXT NOT NULL, token_quantity REAL NOT NULL,
+            average_entry_price REAL NOT NULL, cost_basis_usd REAL NOT NULL,
+            opened_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS practice_trades (
+            id INTEGER PRIMARY KEY, occurred_at TEXT NOT NULL, mint TEXT NOT NULL,
+            symbol TEXT NOT NULL, side TEXT NOT NULL, token_quantity REAL NOT NULL,
+            fill_price_usd REAL NOT NULL, gross_usd REAL NOT NULL, fee_usd REAL NOT NULL,
+            realized_pnl_usd REAL NOT NULL DEFAULT 0, sol_size REAL NOT NULL DEFAULT 0)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -158,4 +170,127 @@ class Ledger:
             "COALESCE(SUM(realized_pnl_usd),0) FROM paper_positions "
             "WHERE status='CLOSED' GROUP BY wallet_address,wallet_label "
             "ORDER BY COALESCE(SUM(realized_pnl_usd),0) DESC"
+        ).fetchall()
+
+    def ensure_practice_account(self, starting_balance_usd: float) -> None:
+        self.connection.execute(
+            "INSERT OR IGNORE INTO practice_account(id,cash_usd,starting_balance_usd,created_at) "
+            "VALUES(1,?,?,?)",
+            (starting_balance_usd, starting_balance_usd, datetime.now(timezone.utc).isoformat()),
+        )
+        self.connection.commit()
+
+    def practice_cash(self) -> float:
+        row = self.connection.execute("SELECT cash_usd FROM practice_account WHERE id=1").fetchone()
+        return float(row[0]) if row else 0.0
+
+    def practice_account(self) -> tuple | None:
+        return self.connection.execute(
+            "SELECT cash_usd,starting_balance_usd,created_at FROM practice_account WHERE id=1"
+        ).fetchone()
+
+    def practice_trade_counts(self) -> tuple[int, int, int]:
+        row = self.connection.execute(
+            "SELECT COUNT(*),COALESCE(SUM(CASE WHEN side='BUY' THEN 1 ELSE 0 END),0),"
+            "COALESCE(SUM(CASE WHEN side='SELL' THEN 1 ELSE 0 END),0) FROM practice_trades"
+        ).fetchone()
+        return int(row[0]), int(row[1]), int(row[2])
+
+    def practice_positions(self) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT mint,symbol,token_quantity,average_entry_price,cost_basis_usd,opened_at,updated_at "
+            "FROM practice_positions ORDER BY updated_at DESC"
+        ).fetchall()
+
+    def practice_position(self, mint: str) -> tuple | None:
+        return self.connection.execute(
+            "SELECT mint,symbol,token_quantity,average_entry_price,cost_basis_usd,opened_at,updated_at "
+            "FROM practice_positions WHERE mint=?", (mint,)
+        ).fetchone()
+
+    def practice_hourly_buys(self, now: datetime) -> float:
+        since = now.astimezone(timezone.utc) - timedelta(hours=1)
+        row = self.connection.execute(
+            "SELECT COALESCE(SUM(gross_usd + fee_usd),0) FROM practice_trades "
+            "WHERE side='BUY' AND occurred_at>=?", (since.isoformat(),)
+        ).fetchone()
+        return float(row[0] or 0)
+
+    def practice_buy(
+        self, mint: str, symbol: str, quantity: float, fill_price_usd: float,
+        gross_usd: float, fee_usd: float, sol_size: float, now: datetime,
+    ) -> None:
+        existing = self.practice_position(mint)
+        timestamp = now.astimezone(timezone.utc).isoformat()
+        with self.connection:
+            self.connection.execute(
+                "UPDATE practice_account SET cash_usd=cash_usd-? WHERE id=1",
+                (gross_usd + fee_usd,),
+            )
+            if existing:
+                new_quantity = float(existing[2]) + quantity
+                new_cost = float(existing[4]) + gross_usd + fee_usd
+                self.connection.execute(
+                    "UPDATE practice_positions SET symbol=?,token_quantity=?,average_entry_price=?,"
+                    "cost_basis_usd=?,updated_at=? WHERE mint=?",
+                    (symbol, new_quantity, new_cost / new_quantity, new_cost, timestamp, mint),
+                )
+            else:
+                total_cost = gross_usd + fee_usd
+                self.connection.execute(
+                    "INSERT INTO practice_positions(mint,symbol,token_quantity,average_entry_price,"
+                    "cost_basis_usd,opened_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (mint, symbol, quantity, total_cost / quantity, total_cost, timestamp, timestamp),
+                )
+            self.connection.execute(
+                "INSERT INTO practice_trades(occurred_at,mint,symbol,side,token_quantity,fill_price_usd,"
+                "gross_usd,fee_usd,realized_pnl_usd,sol_size) VALUES(?,?,?,?,?,?,?,?,0,?)",
+                (timestamp, mint, symbol, "BUY", quantity, fill_price_usd, gross_usd, fee_usd, sol_size),
+            )
+
+    def practice_sell(
+        self, mint: str, symbol: str, quantity: float, fill_price_usd: float,
+        gross_usd: float, fee_usd: float, realized_pnl_usd: float, now: datetime,
+    ) -> None:
+        existing = self.practice_position(mint)
+        if not existing:
+            raise ValueError("practice position not found")
+        timestamp = now.astimezone(timezone.utc).isoformat()
+        remaining = max(0.0, float(existing[2]) - quantity)
+        remaining_cost = max(0.0, float(existing[4]) - float(existing[3]) * quantity)
+        with self.connection:
+            self.connection.execute(
+                "UPDATE practice_account SET cash_usd=cash_usd+? WHERE id=1", (gross_usd - fee_usd,)
+            )
+            if remaining <= 1e-12:
+                self.connection.execute("DELETE FROM practice_positions WHERE mint=?", (mint,))
+            else:
+                self.connection.execute(
+                    "UPDATE practice_positions SET token_quantity=?,cost_basis_usd=?,updated_at=? WHERE mint=?",
+                    (remaining, remaining_cost, timestamp, mint),
+                )
+            self.connection.execute(
+                "INSERT INTO practice_trades(occurred_at,mint,symbol,side,token_quantity,fill_price_usd,"
+                "gross_usd,fee_usd,realized_pnl_usd,sol_size) VALUES(?,?,?,?,?,?,?,?,?,0)",
+                (timestamp, mint, symbol, "SELL", quantity, fill_price_usd, gross_usd, fee_usd, realized_pnl_usd),
+            )
+
+    def practice_history(self, limit: int = 20) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT occurred_at,symbol,mint,side,token_quantity,fill_price_usd,gross_usd,fee_usd,"
+            "realized_pnl_usd,sol_size FROM practice_trades ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    def practice_statistics(self) -> tuple[int, int, float, float]:
+        row = self.connection.execute(
+            "SELECT COUNT(*),COALESCE(SUM(CASE WHEN realized_pnl_usd>0 THEN 1 ELSE 0 END),0),"
+            "COALESCE(SUM(realized_pnl_usd),0),COALESCE(SUM(fee_usd),0) "
+            "FROM practice_trades WHERE side='SELL'"
+        ).fetchone()
+        return int(row[0]), int(row[1]), float(row[2]), float(row[3])
+
+    def practice_top_gains(self, limit: int = 10) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT occurred_at,symbol,mint,realized_pnl_usd,gross_usd FROM practice_trades "
+            "WHERE side='SELL' AND realized_pnl_usd>0 ORDER BY realized_pnl_usd DESC LIMIT ?", (limit,)
         ).fetchall()
