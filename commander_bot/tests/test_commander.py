@@ -373,7 +373,7 @@ class CommanderTests(unittest.TestCase):
         for action in {
             "practice_profile", "practice_wallet", "practice_history", "practice_pnl", "practice_gains",
             "practice_buy_0_5", "practice_buy_1", "practice_buy_2_5",
-            "practice_buy_5", "practice_buy_10", "practice_sell_25",
+            "practice_buy_5", "practice_buy_10", "practice_manual_buy", "practice_sell_25",
             "practice_sell_50", "practice_sell_75", "practice_sell_100",
             "practice_instant_sell",
         }:
@@ -382,8 +382,57 @@ class CommanderTests(unittest.TestCase):
         mint = "11111111111111111111111111111111"
         result_keyboard = research_result_keyboard(mint, "https://dexscreener.com/solana/demo")
         callback = result_keyboard["inline_keyboard"][0][0]["callback_data"]
+        self.assertEqual(result_keyboard["inline_keyboard"][0][0]["text"], "🎮 Trade with Fake Money")
+        self.assertEqual(result_keyboard["inline_keyboard"][1][0]["callback_data"], "practice_profile")
         self.assertEqual(callback, f"practice_select:{mint}")
         self.assertLessEqual(len(callback.encode()), 64)
+
+    def test_practice_default_hourly_limit_is_two_thousand(self):
+        self.assertEqual(Settings().practice_hourly_buy_limit_usd, 2_000)
+
+    def test_custom_buy_accepts_sol_and_usd_formats(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        prompt = controller.handle_practice_action("practice_manual_buy")
+        self.assertIn("0.75 SOL", prompt)
+        self.assertEqual(controller.ledger.get_state("practice_pending_input"), "CUSTOM_BUY")
+        with patch("commander_bot.practice_trading.PracticeTrading.buy_sol", return_value="SOL FILLED") as buy_sol:
+            self.assertEqual(controller.handle_practice_command("0.75"), "SOL FILLED")
+            buy_sol.assert_called_once_with(0.75)
+        controller.handle_practice_action("practice_manual_buy")
+        with patch("commander_bot.practice_trading.PracticeTrading.buy_usd", return_value="USD FILLED") as buy_usd:
+            self.assertEqual(controller.handle_practice_command("$250"), "USD FILLED")
+            buy_usd.assert_called_once_with(250.0)
+        self.assertEqual(controller.ledger.get_state("practice_pending_input"), "")
+
+    def test_custom_usd_buy_uses_live_sol_reference_size(self):
+        settings = Settings(
+            database_path=":memory:", practice_starting_balance_usd=10_000,
+            practice_hourly_buy_limit_usd=2_000, practice_fee_pct=0.5,
+            practice_slippage_pct=1,
+        )
+        ledger = Ledger(":memory:")
+        practice = PracticeTrading(settings, ledger)
+        ledger.set_state("practice_selected_mint", "demo-mint")
+        ledger.set_state("practice_selected_symbol", "DEMO")
+        result = practice.buy_usd(250, token_price=2, sol_price=125)
+        self.assertIn("2 SOL ($250.00)", result)
+        self.assertAlmostEqual(ledger.practice_cash(), 9_748.75)
+
+    def test_scanned_trade_button_binds_exact_mint_to_user_terminal(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        mint = "11111111111111111111111111111111"
+        with patch(
+            "commander_bot.practice_trading.live_token_profile",
+            return_value=("MEME", 0.00125, "https://dexscreener.com/solana/meme"),
+        ):
+            message = controller.select_practice_token(mint)
+        self.assertIn("MEME selected", message)
+        self.assertEqual(controller.ledger.get_state("practice_selected_mint"), mint)
+        self.assertEqual(controller.ledger.get_state("practice_selected_symbol"), "MEME")
+        self.assertEqual(
+            controller.ledger.get_state("practice_selected_chart"),
+            "https://dexscreener.com/solana/meme",
+        )
 
     def test_practice_accounts_are_isolated_per_user_database(self):
         with tempfile.TemporaryDirectory() as directory:

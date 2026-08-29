@@ -90,7 +90,7 @@ class PracticeTrading:
             lines.extend([
                 "",
                 "No token selected.",
-                "Choose Paper Trade beneath a research result or use:",
+                "Choose Trade with Fake Money beneath a research result or use:",
                 "/trade TOKEN_MINT SYMBOL",
             ])
         else:
@@ -152,6 +152,23 @@ class PracticeTrading:
             f"Size: {sol_amount:g} SOL ({_money(gross)})\n"
             f"Fill: {_price(fill)}\nFee: {_money(fee)}\n"
             f"Tokens: {quantity:,.6f}\n\nNo wallet transaction was submitted."
+        )
+
+    def buy_usd(
+        self, usd_amount: float, token_price: float | None = None, sol_price: float | None = None,
+        now: datetime | None = None,
+    ) -> str:
+        if usd_amount <= 0:
+            return "Enter a paper-buy amount greater than zero."
+        try:
+            reference_sol_price = sol_price or live_price(WRAPPED_SOL_MINT)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+            return "⚠️ SOL reference price unavailable. No paper order was created."
+        return self.buy_sol(
+            usd_amount / reference_sol_price,
+            token_price=token_price,
+            sol_price=reference_sol_price,
+            now=now,
         )
 
     def sell_percent(

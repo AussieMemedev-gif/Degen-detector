@@ -29,6 +29,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Persistent-volume-ready SQLite paths so owner and tester paper data can survive redeployments
 - Stage 12.1 top-ten investigated results with green/amber/red classifications and rejection breakdowns
 - Stage 13 per-user Practice Trade terminal with live-priced fake-money orders, rolling hourly buying power, realistic fee/slippage modelling, isolated wallets, history, all-time P&L and top gains
+- Stage 13.2 one-tap Trade with Fake Money buttons on every individual research result and private automatic owner alert
 
 ## Quick start
 
@@ -48,7 +49,9 @@ The control buttons operate the safe paper pipeline. `Automatic` runs scans only
 
 Paper Copy starts disabled. Enable it from **Wallet / KOL Tracker → Paper Copy Trading** or with `/paperon`. New observed BUY signals open simulated fixed-size positions and corresponding SELL signals close them. `/portfolio` shows paper positions and `/traders` ranks only completed simulations. It never submits a transaction and never asks for a private key.
 
-Open **Practice Trade** for the manual training terminal. Every user starts with an isolated virtual balance and can select a token from a research result or use `/trade TOKEN_MINT SYMBOL`. Buys use fixed 0.5/1/2.5/5/10 SOL reference sizes; exits use 25/50/75/100% or Instant Paper Sell. `PRACTICE_HOURLY_BUY_LIMIT_USD` is a rolling one-hour cap on new fake-money buys, not an hourly cash refill. Fills include configurable simulated slippage and fees. No control signs or broadcasts a blockchain transaction.
+Open **Practice Trade** for the manual training terminal. Every user starts with an isolated virtual balance and can select a token from a research result or use `/trade TOKEN_MINT SYMBOL`. Buys use fixed 0.5/1/2.5/5/10 SOL reference sizes or the Custom Buy flow, which accepts entries such as `0.75 SOL`, `$250`, or `250 USD`. Exits use 25/50/75/100% or Instant Paper Sell. `PRACTICE_HOURLY_BUY_LIMIT_USD` defaults to $2,000 and is a rolling one-hour cap on new fake-money buys, not an hourly cash refill. Fills include configurable simulated slippage and fees. No control signs or broadcasts a blockchain transaction.
+
+Every individual Research Scan result includes **Trade with Fake Money**, **Live Chart**, and **My Practice Profile** controls. The trade button binds the exact scanned mint to the requesting user's isolated practice terminal. Automatic alerts receive the same controls in the owner's private chat; group alerts remain read-only so another group member cannot operate somebody else's practice profile.
 
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
 

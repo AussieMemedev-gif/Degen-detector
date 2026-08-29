@@ -349,7 +349,13 @@ def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
     message = "🕒 AUTOMATIC PEAK-TIME ALERT\n" + format_live_alert(
         best_snapshot, best_decision, settings.bot_display_name
     )
-    send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
+    send_research_result(
+        settings.telegram_token,
+        settings.telegram_chat_id,
+        message,
+        best_snapshot.mint,
+        best_snapshot.chart_url,
+    )
     group_id = str(settings.telegram_alert_group_id).strip()
     if group_id and group_id != str(settings.telegram_chat_id):
         send_telegram(settings.telegram_token, group_id, message)

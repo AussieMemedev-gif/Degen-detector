@@ -110,7 +110,7 @@ class BotController:
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
             "🎮 Practice Trade — trade live-priced tokens with isolated fake funds. "
-            "Choose Paper Trade below a scan result or use /trade TOKEN_MINT SYMBOL. "
+            "Choose Trade with Fake Money below a scan result or use /trade TOKEN_MINT SYMBOL. "
             "The terminal includes fixed SOL buys, 25/50/75/100% exits, instant paper sell, "
             "wallet, history, all-time P&L and top gains.\n\n"
             f"Research scans have a {max(30, self.settings.tester_scan_cooldown_seconds)}-second tester cooldown. "
@@ -151,6 +151,18 @@ class BotController:
             )
         if action in {"practice_dashboard", "practice_refresh"}:
             return practice.terminal_message()
+        if action == "practice_manual_buy":
+            self.ledger.set_state("practice_pending_input", "CUSTOM_BUY")
+            return (
+                "✍️ CUSTOM PAPER BUY\n\n"
+                "Enter a custom amount in either format:\n"
+                "• 0.75 SOL\n"
+                "• $250 or 250 USD\n\n"
+                "A plain number such as 0.75 is treated as SOL.\n"
+                "Send /cancel to stop. The live quote, simulated fee, slippage, virtual cash "
+                f"and ${self.settings.practice_hourly_buy_limit_usd:,.0f} rolling hourly limit "
+                "will be checked before the fill."
+            )
         if action == "practice_wallet":
             return practice.wallet_message()
         if action == "practice_profile":
@@ -182,6 +194,16 @@ class BotController:
     def handle_practice_command(self, text: str) -> Optional[str]:
         parts = text.strip().split(maxsplit=2)
         command = parts[0].lower() if parts else ""
+        if command == "/cancel" and self.ledger.get_state("practice_pending_input", ""):
+            self.ledger.set_state("practice_pending_input", "")
+            return "Custom paper order cancelled."
+        pending = self.ledger.get_state("practice_pending_input", "")
+        if pending == "CUSTOM_BUY" and not command.startswith("/"):
+            return self._handle_custom_buy_text(text)
+        if command == "/buy":
+            if len(parts) < 2:
+                return "Use /buy 0.75 SOL or /buy $250"
+            return self._handle_custom_buy_text(" ".join(parts[1:]))
         if command == "/trade":
             if len(parts) < 2:
                 return "Use: /trade TOKEN_MINT SYMBOL"
@@ -198,6 +220,20 @@ class BotController:
         if command == "/papergains":
             return self._practice().top_gains_message()
         return None
+
+    def _handle_custom_buy_text(self, text: str) -> str:
+        raw = text.strip().upper().replace(",", "")
+        is_usd = raw.startswith("$") or raw.endswith(" USD")
+        number = raw.removeprefix("$").removesuffix(" USD").removesuffix(" SOL").strip()
+        try:
+            amount = float(number)
+        except ValueError:
+            return "Invalid amount. Enter 0.75 SOL, $250, or send /cancel."
+        if amount <= 0 or amount > 1_000_000:
+            return "Enter an amount greater than zero and within the paper account limits."
+        self.ledger.set_state("practice_pending_input", "")
+        practice = self._practice()
+        return practice.buy_usd(amount) if is_usd else practice.buy_sol(amount)
 
     def handle_tester_scan(self, now: Optional[datetime] = None) -> str:
         now = now or datetime.now(timezone.utc)

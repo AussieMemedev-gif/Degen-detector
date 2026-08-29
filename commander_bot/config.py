@@ -38,7 +38,7 @@ class Settings:
     scan_qualified_score: float = _float("SCAN_QUALIFIED_SCORE", 75)
     tester_scan_cooldown_seconds: int = _int("TESTER_SCAN_COOLDOWN_SECONDS", 90)
     practice_starting_balance_usd: float = _float("PRACTICE_STARTING_BALANCE_USD", 10_000)
-    practice_hourly_buy_limit_usd: float = _float("PRACTICE_HOURLY_BUY_LIMIT_USD", 1_000)
+    practice_hourly_buy_limit_usd: float = _float("PRACTICE_HOURLY_BUY_LIMIT_USD", 2_000)
     practice_fee_pct: float = _float("PRACTICE_FEE_PCT", 0.50)
     practice_slippage_pct: float = _float("PRACTICE_SLIPPAGE_PCT", 1.00)
     auto_scan_interval_minutes: int = _int("AUTO_SCAN_INTERVAL_MINUTES", 15)

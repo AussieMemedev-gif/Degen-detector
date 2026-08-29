@@ -244,6 +244,7 @@ def practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
             {"text": "5", "callback_data": "practice_buy_5"},
             {"text": "10", "callback_data": "practice_buy_10"},
         ],
+        [{"text": "✍️ Custom Buy — SOL or USD", "callback_data": "practice_manual_buy"}],
         [{"text": "PAPER SELL — POSITION %", "callback_data": "noop"}],
         [
             {"text": "25%", "callback_data": "practice_sell_25"},
@@ -260,9 +261,10 @@ def practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
 
 
 def research_result_keyboard(mint: str, chart_url: str = "") -> Dict[str, Any]:
-    rows: List[List[Dict[str, str]]] = [[
-        {"text": "🎯 Paper Trade", "callback_data": f"practice_select:{mint}"},
-    ]]
+    rows: List[List[Dict[str, str]]] = [
+        [{"text": "🎮 Trade with Fake Money", "callback_data": f"practice_select:{mint}"}],
+        [{"text": "👤 My Practice Profile", "callback_data": "practice_profile"}],
+    ]
     if chart_url.startswith(("https://", "http://")):
         rows[0].append({"text": "📈 Live Chart", "url": chart_url})
     return {"inline_keyboard": rows}
