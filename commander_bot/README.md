@@ -25,6 +25,8 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Direct Pump.fun links plus clearly labelled screening estimates for sniper/bundle activity
 - Beta tester allowlist with server-enforced owner/tester roles and isolated tester databases
 - Legacy Telegram webhook cleanup before long polling to prevent HTTP 409 conflicts
+- Stage 12 ranked research scans with up to 10 safe results, qualified/watchlist counts and tester cooldowns
+- Persistent-volume-ready SQLite paths so owner and tester paper data can survive redeployments
 
 ## Quick start
 
@@ -35,6 +37,8 @@ python -m unittest discover -s commander_bot/tests -v
 ```
 
 Set the environment variables shown in `.env.example` in the hosting dashboard. Never paste bot tokens or wallet private keys into Telegram or source code. Send `/start` to the bot after the control service starts.
+
+For persistent beta data on Railway, mount a volume at `/data` and set `DATABASE_PATH=/data/commander_bot.db`. Tester databases are automatically created beside the owner database. Keep the service at one replica while using SQLite. `SCAN_RESULT_LIMIT` is bounded to 1–10; `LIVE_CANDIDATE_LIMIT` should be at least 20 if the scan is expected to find up to 10 displayable results.
 
 For beta access, keep `TELEGRAM_OWNER_ID` set to the owner's numeric Telegram user ID and put approved private-chat user IDs in `TELEGRAM_TESTER_IDS` as a comma-separated list. `TELEGRAM_CHAT_ID` remains supported as the owner-ID fallback. An unapproved user can privately send `/start` to receive their numeric ID for approval. Testers receive research, launchpad, read-only wallet tracking and isolated paper-trading tools; global scan scheduling, settings, stop controls and emergency controls remain owner-only. Interactive commands in groups are deliberately refused. Optionally send `/groupid` in a group from the owner account, then set the returned negative ID as `TELEGRAM_ALERT_GROUP_ID` to publish the same paper-only automatic research alert in that group.
 

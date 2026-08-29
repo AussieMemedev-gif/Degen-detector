@@ -155,7 +155,7 @@ def hot_score(snapshot: TokenSnapshot, decision: CommanderDecision) -> float:
     return round(max(0, min(100, score)), 1)
 
 
-def format_hot_leaderboard(results: List[tuple[TokenSnapshot, CommanderDecision]], limit: int = 5) -> str:
+def format_hot_leaderboard(results: List[tuple[TokenSnapshot, CommanderDecision]], limit: int = 10) -> str:
     ranked = sorted(
         ((hot_score(snapshot, decision), snapshot, decision) for snapshot, decision in results),
         key=lambda item: item[0],
@@ -190,11 +190,49 @@ def build_hot_leaderboard(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-    return format_hot_leaderboard(results)
+    return format_hot_leaderboard(results, max(1, min(10, settings.scan_result_limit)))
+
+
+def visible_scan_results(
+    results: List[tuple[TokenSnapshot, CommanderDecision]], limit: int
+) -> List[tuple[TokenSnapshot, CommanderDecision]]:
+    """Return only non-vetoed research candidates, ordered by Commander score."""
+    safe = [
+        (snapshot, decision)
+        for snapshot, decision in results
+        if decision.status != "REJECTED" and not decision.vetoes
+    ]
+    return safe[:max(1, min(10, limit))]
+
+
+def format_scan_summary(
+    visible: List[tuple[TokenSnapshot, CommanderDecision]],
+    safe_count: int,
+    analysed_count: int,
+    discovered_count: int,
+    qualified_score: float,
+    result_limit: int,
+) -> str:
+    qualified = sum(decision.score >= qualified_score for _, decision in visible)
+    watchlist = len(visible) - qualified
+    excluded = max(0, discovered_count - safe_count)
+    additional_safe = max(0, safe_count - len(visible))
+    return (
+        "🔎 DEGEN DETECTOR RESEARCH SCAN\n"
+        f"Analysed successfully: {analysed_count}/{discovered_count}\n"
+        f"Qualified research: {qualified} ({qualified_score:.0f}+)\n"
+        f"Watchlist research: {watchlist}\n"
+        f"Unsafe/incomplete excluded: {excluded}\n"
+        f"Showing: {len(visible)} of up to {max(1, min(10, result_limit))}\n"
+        + (f"Additional safe candidates not shown: {additional_safe}\n" if additional_safe else "")
+        + "\n"
+        "Results are ranked research observations, not instructions to trade."
+    )
 
 
 def run_live_scan(settings: Settings) -> str:
-    results = analyse_candidates(settings, discover_mints(settings.live_candidate_limit))
+    mints = discover_mints(max(1, settings.live_candidate_limit))
+    results = analyse_candidates(settings, mints)
     if not results:
         message = "🔎 Live scan completed: no candidates passed data-integrity checks. No paper trade created."
         send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
@@ -202,10 +240,28 @@ def run_live_scan(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-    best_snapshot, best_decision = results[0]
-    message = format_live_alert(best_snapshot, best_decision, settings.bot_display_name)
-    send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
-    return message
+    visible = visible_scan_results(results, settings.scan_result_limit)
+    safe_count = sum(
+        decision.status != "REJECTED" and not decision.vetoes
+        for _, decision in results
+    )
+    summary = format_scan_summary(
+        visible,
+        safe_count=safe_count,
+        analysed_count=len(results),
+        discovered_count=len(mints),
+        qualified_score=settings.scan_qualified_score,
+        result_limit=settings.scan_result_limit,
+    )
+    send_telegram(settings.telegram_token, settings.telegram_chat_id, summary)
+    for index, (snapshot, decision) in enumerate(visible, start=1):
+        label = "QUALIFIED RESEARCH" if decision.score >= settings.scan_qualified_score else "WATCHLIST RESEARCH"
+        message = (
+            f"📌 RESULT {index}/{len(visible)} — {label}\n"
+            + format_live_alert(snapshot, decision, settings.bot_display_name)
+        )
+        send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
+    return summary
 
 
 def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:

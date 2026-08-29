@@ -86,6 +86,7 @@ class BotController:
 
     def tester_status_message(self) -> str:
         paper_copy = self.ledger.get_state("paper_copy_enabled", "OFF")
+        scans = self._pref_int("tester_scan_count", 0)
         return (
             "🧪 DEGEN DETECTOR BETA ACCESS\n"
             "Role: Approved tester\n"
@@ -93,20 +94,42 @@ class BotController:
             "Trading: PAPER ONLY\n"
             "Wallet access: DISABLED\n"
             f"Personal paper copy: {paper_copy}\n"
+            f"Research scans used: {scans}\n"
             "Owner controls and live execution: LOCKED"
         )
 
     def help_message(self) -> str:
         return (
             "📖 DEGEN DETECTOR BETA HELP\n\n"
-            "⚡ Research Scan — analyse current candidates.\n"
-            "🔥 Leaderboard — rank candidates that pass safety checks.\n"
+            "⚡ Research Scan — show up to 10 ranked candidates that pass hard safety vetoes.\n"
+            "🟢 Qualified — score meets the 75+ research threshold.\n"
+            "🟡 Watchlist — passed hard vetoes but remains below the qualification threshold.\n"
+            "🔥 Leaderboard — rank safe candidates by momentum and holding strength.\n"
             "🚀 Launchpads / PF — inspect Solana launch sources.\n"
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
+            f"Research scans have a {max(30, self.settings.tester_scan_cooldown_seconds)}-second tester cooldown. "
+            "The bot never fills a list with rejected tokens just to reach ten.\n\n"
             "Use the bot in this private chat. Never send a seed phrase or private key. "
             "All beta results are research and simulation, not trade execution."
         )
+
+    def handle_tester_scan(self, now: Optional[datetime] = None) -> str:
+        now = now or datetime.now(timezone.utc)
+        cooldown = max(30, self.settings.tester_scan_cooldown_seconds)
+        last_text = self.ledger.get_state("last_tester_scan", "")
+        if last_text:
+            try:
+                remaining = cooldown - int((now - datetime.fromisoformat(last_text)).total_seconds())
+            except ValueError:
+                remaining = 0
+            if remaining > 0:
+                return f"⏳ Research scan cooldown: try again in {remaining} seconds."
+        self.ledger.set_state("last_tester_scan", now.isoformat())
+        self.ledger.set_state("tester_scan_count", str(self._pref_int("tester_scan_count", 0) + 1))
+        from .main import run_once
+        run_once(self.settings)
+        return f"✅ Research scan completed. Up to {max(1, min(10, self.settings.scan_result_limit))} ranked results were requested."
 
     def handle(self, action: str) -> str:
         if action not in VALID_ACTIONS:
@@ -400,7 +423,12 @@ def run_control_bot(settings: Settings) -> None:
                 elif action.startswith(("interval_", "window_", "score_", "cooldown_")):
                     send_settings_menu(settings.telegram_token, chat_id, active.set_preference(action))
                 else:
-                    reply = active.tester_status_message() if role == "tester" and action == "status" else active.handle(action)
+                    if role == "tester" and action == "status":
+                        reply = active.tester_status_message()
+                    elif role == "tester" and action == "scan_once":
+                        reply = active.handle_tester_scan()
+                    else:
+                        reply = active.handle(action)
                     if role == "owner":
                         send_control_menu(settings.telegram_token, chat_id, reply)
                     else:

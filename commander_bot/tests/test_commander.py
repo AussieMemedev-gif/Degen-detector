@@ -9,7 +9,9 @@ from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
-from commander_bot.live_data import format_hot_leaderboard, hot_score, snapshot_from_pair
+from commander_bot.live_data import (
+    format_hot_leaderboard, format_scan_summary, hot_score, snapshot_from_pair, visible_scan_results,
+)
 from commander_bot.notifications import format_live_alert, telegram_request
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
 from commander_bot.paper_copy import portfolio_message, process_wallet_events, trader_rankings_message
@@ -264,6 +266,38 @@ class CommanderTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         request = urlopen.call_args.args[0]
         self.assertIn("deleteWebhook", request.full_url)
+
+    def test_ranked_scan_shows_up_to_ten_non_rejected_results(self):
+        safe_results = []
+        for index in range(12):
+            token = replace(demo_candidate(), mint=f"mint-{index}", symbol=f"SAFE{index}")
+            safe_results.append((token, self.commander.decide(token)))
+        rejected_token = replace(demo_candidate(), mint="rejected", liquidity_usd=1_000, sellable=False)
+        results = safe_results + [(rejected_token, self.commander.decide(rejected_token))]
+        visible = visible_scan_results(results, 10)
+        self.assertEqual(len(visible), 10)
+        self.assertTrue(all(decision.status != "REJECTED" for _, decision in visible))
+        summary = format_scan_summary(visible, len(safe_results), len(results), len(results), 75, 10)
+        self.assertIn("Showing: 10 of up to 10", summary)
+        self.assertIn("Unsafe/incomplete excluded: 1", summary)
+        self.assertIn("Additional safe candidates not shown: 2", summary)
+
+    def test_tester_scan_cooldown_prevents_repeated_api_use(self):
+        controller = BotController(Settings(database_path=":memory:", tester_scan_cooldown_seconds=90))
+        now = datetime(2026, 8, 29, 8, 0, tzinfo=timezone.utc)
+        with patch("commander_bot.main.run_once", return_value="done") as scan:
+            first = controller.handle_tester_scan(now)
+            second = controller.handle_tester_scan(now)
+        self.assertIn("completed", first)
+        self.assertIn("cooldown", second)
+        scan.assert_called_once()
+
+    def test_ledger_creates_parent_directory_for_persistent_volume_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = f"{directory}/nested/commander_bot.db"
+            ledger = Ledger(path)
+            ledger.set_state("persistent", "yes")
+            self.assertEqual(ledger.get_state("persistent"), "yes")
 
 
 if __name__ == "__main__":

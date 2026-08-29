@@ -2,11 +2,14 @@ import json
 import sqlite3
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from .models import CommanderDecision, TokenSnapshot
 
 
 class Ledger:
     def __init__(self, path: str):
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(path)
         self.connection.execute("""CREATE TABLE IF NOT EXISTS decisions (
             id INTEGER PRIMARY KEY, observed_at TEXT NOT NULL, mint TEXT NOT NULL,
