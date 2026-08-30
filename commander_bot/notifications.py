@@ -123,6 +123,7 @@ def control_keyboard() -> Dict[str, Any]:
             {"text": "🚨 Emergency Stop", "callback_data": "emergency_stop"},
         ],
         [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
+        [{"text": "🧪 Token Sniffer", "callback_data": "token_sniffer"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
@@ -137,6 +138,7 @@ def tester_keyboard() -> Dict[str, Any]:
             {"text": "📊 My Access", "callback_data": "status"},
         ],
         [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
+        [{"text": "🧪 Token Sniffer", "callback_data": "token_sniffer"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
@@ -234,7 +236,7 @@ def practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
         ],
         [
             {"text": "🎯 Paper Snipe", "callback_data": "practice_snipe"},
-            {"text": "🔄 Refresh", "callback_data": "practice_refresh"},
+            {"text": "🔄 Refresh Live Stats", "callback_data": "practice_refresh"},
         ],
         [{"text": "PAPER BUY — SOL SIZE", "callback_data": "noop"}],
         [
@@ -256,8 +258,56 @@ def practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
     ]
     if chart_url.startswith(("https://", "http://")):
         rows.append([{"text": "📈 Open Live Chart", "url": chart_url}])
-    rows.append([{"text": "⬅️ Main Menu", "callback_data": "main_menu"}])
+    rows.append([{"text": "🟢 Basic Dashboard", "callback_data": "practice_basic"}])
+    rows.append([{"text": "⬅️ Practice Home", "callback_data": "practice_dashboard"}])
     return {"inline_keyboard": rows}
+
+
+def practice_hub_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [{"text": "🟢 Basic Trading", "callback_data": "practice_basic"}],
+        [{"text": "🧠 Advanced Trading", "callback_data": "practice_advanced"}],
+        [{"text": "🧪 Token Sniffer", "callback_data": "token_sniffer"}],
+        [
+            {"text": "👤 My Profile", "callback_data": "practice_profile"},
+            {"text": "👛 Wallet", "callback_data": "practice_wallet"},
+        ],
+        [{"text": "⬅️ Main Menu", "callback_data": "main_menu"}],
+    ]}
+
+
+def basic_practice_keyboard(chart_url: str = "") -> Dict[str, Any]:
+    rows: List[List[Dict[str, str]]] = [
+        [
+            {"text": "👤 Profile", "callback_data": "practice_basic_profile"},
+            {"text": "👛 Wallet", "callback_data": "practice_basic_wallet"},
+        ],
+        [{"text": "🔄 Refresh Live Stats", "callback_data": "practice_basic_refresh"}],
+        [{"text": "QUICK PAPER BUY — SOL", "callback_data": "noop"}],
+        [
+            {"text": "0.5", "callback_data": "practice_basic_buy_0_5"},
+            {"text": "1", "callback_data": "practice_basic_buy_1"},
+            {"text": "2.5", "callback_data": "practice_basic_buy_2_5"},
+        ],
+        [{"text": "QUICK PAPER SELL", "callback_data": "noop"}],
+        [
+            {"text": "25%", "callback_data": "practice_basic_sell_25"},
+            {"text": "50%", "callback_data": "practice_basic_sell_50"},
+            {"text": "100%", "callback_data": "practice_basic_sell_100"},
+        ],
+        [{"text": "🧠 Advanced Dashboard", "callback_data": "practice_advanced"}],
+        [{"text": "⬅️ Practice Home", "callback_data": "practice_dashboard"}],
+    ]
+    if chart_url.startswith(("https://", "http://")):
+        rows.insert(2, [{"text": "📈 Open Live Chart", "url": chart_url}])
+    return {"inline_keyboard": rows}
+
+
+def token_sniffer_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [{"text": "❌ Cancel", "callback_data": "token_sniffer_cancel"}],
+        [{"text": "⬅️ Practice Home", "callback_data": "practice_dashboard"}],
+    ]}
 
 
 def research_result_keyboard(mint: str, chart_url: str = "") -> Dict[str, Any]:
@@ -324,6 +374,32 @@ def send_practice_menu(token: str, chat_id: str, message: str, chart_url: str = 
         "chat_id": chat_id,
         "text": message,
         "reply_markup": practice_keyboard(chart_url),
+        "disable_web_page_preview": True,
+    })
+
+
+def send_practice_hub(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": practice_hub_keyboard(),
+    })
+
+
+def send_basic_practice_menu(token: str, chat_id: str, message: str, chart_url: str = "") -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": basic_practice_keyboard(chart_url),
+        "disable_web_page_preview": True,
+    })
+
+
+def send_token_sniffer_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": token_sniffer_keyboard(),
         "disable_web_page_preview": True,
     })
 

@@ -7,7 +7,8 @@ from .config import Settings
 from .access import TelegramAccess, user_database_path
 from .notifications import (
     answer_callback, delete_webhook, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
-    send_practice_menu, send_settings_menu, send_telegram, send_tester_menu, send_wallet_menu,
+    send_basic_practice_menu, send_practice_hub, send_practice_menu, send_research_result,
+    send_settings_menu, send_telegram, send_tester_menu, send_token_sniffer_menu, send_wallet_menu,
 )
 from .storage import Ledger
 
@@ -109,6 +110,8 @@ class BotController:
             "🚀 Launchpads / PF — inspect Solana launch sources.\n"
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
+            "🧪 Token Sniffer — paste a Solana contract address for a scored Ape research, "
+            "Watchlist or Reject classification. Use /sniff TOKEN_MINT.\n"
             "🎮 Practice Trade — trade live-priced tokens with isolated fake funds. "
             "Choose Trade with Fake Money below a scan result or use /trade TOKEN_MINT SYMBOL. "
             "The terminal includes fixed SOL buys, 25/50/75/100% exits, instant paper sell, "
@@ -125,6 +128,9 @@ class BotController:
 
     def practice_message(self) -> str:
         return self._practice().terminal_message()
+
+    def practice_hub_message(self) -> str:
+        return self._practice().hub_message()
 
     def practice_chart(self) -> str:
         return self._practice().selected_chart
@@ -190,6 +196,67 @@ class BotController:
             except ValueError:
                 pass
         return practice.terminal_message()
+
+    def handle_basic_practice_action(self, action: str) -> str:
+        practice = self._practice()
+        if action in {"practice_basic", "practice_basic_refresh"}:
+            return practice.terminal_message()
+        if action == "practice_basic_profile":
+            return practice.profile_message()
+        if action == "practice_basic_wallet":
+            return practice.wallet_message()
+        buy_sizes = {
+            "practice_basic_buy_0_5": 0.5,
+            "practice_basic_buy_1": 1.0,
+            "practice_basic_buy_2_5": 2.5,
+        }
+        if action in buy_sizes:
+            return practice.buy_sol(buy_sizes[action])
+        if action.startswith("practice_basic_sell_"):
+            try:
+                return practice.sell_percent(int(action.rsplit("_", 1)[1]))
+            except ValueError:
+                pass
+        return practice.terminal_message()
+
+    def token_sniffer_prompt(self) -> str:
+        self.ledger.set_state("sniffer_pending_input", "CA")
+        return (
+            "🧪 DEGEN DETECTOR TOKEN SNIFFER\n\n"
+            "Paste a complete Solana token contract address (CA).\n\n"
+            "The bot will check live market data, liquidity, trading activity, holder concentration, "
+            "mint/freeze authority, observed sells and estimated slippage before returning:\n"
+            "🦍 Ape Research | 🟡 Watchlist | 🔴 Reject\n\n"
+            "Send /cancel to stop. Never paste a seed phrase or private key."
+        )
+
+    def handle_sniffer_command(self, text: str):
+        parts = text.strip().split(maxsplit=1)
+        command = parts[0].lower() if parts else ""
+        pending = self.ledger.get_state("sniffer_pending_input", "")
+        if command == "/cancel" and pending:
+            self.ledger.set_state("sniffer_pending_input", "")
+            from .token_sniffer import SnifferResult
+            return SnifferResult("Token Sniffer cancelled.", "")
+        if command == "/sniff":
+            if len(parts) != 2:
+                from .token_sniffer import SnifferResult
+                return SnifferResult(self.token_sniffer_prompt(), "")
+            mint = parts[1].strip()
+        elif pending == "CA" and not command.startswith("/"):
+            mint = text.strip()
+        else:
+            return None
+        from .wallet_tracker import valid_solana_address
+        if not valid_solana_address(mint):
+            from .token_sniffer import SnifferResult
+            return SnifferResult(
+                "That does not look like a valid Solana contract address. Paste the complete CA or send /cancel.",
+                "",
+            )
+        self.ledger.set_state("sniffer_pending_input", "")
+        from .token_sniffer import sniff_token
+        return sniff_token(self.settings, mint)
 
     def handle_practice_command(self, text: str) -> Optional[str]:
         parts = text.strip().split(maxsplit=2)
@@ -531,12 +598,34 @@ def run_control_bot(settings: Settings) -> None:
                     send_wallet_menu(settings.telegram_token, chat_id, active.check_wallet_signals())
                 elif action == "paper_copy":
                     send_paper_copy_menu(settings.telegram_token, chat_id, active.paper_copy_message())
+                elif action == "token_sniffer":
+                    send_token_sniffer_menu(
+                        settings.telegram_token, chat_id, active.token_sniffer_prompt()
+                    )
+                elif action == "token_sniffer_cancel":
+                    active.ledger.set_state("sniffer_pending_input", "")
+                    send_practice_hub(
+                        settings.telegram_token, chat_id, active.practice_hub_message()
+                    )
                 elif action.startswith("practice_select:"):
                     mint = action.split(":", 1)[1]
-                    send_practice_menu(
+                    send_basic_practice_menu(
                         settings.telegram_token, chat_id, active.select_practice_token(mint), active.practice_chart()
                     )
-                elif action == "practice_dashboard" or action.startswith("practice_"):
+                elif action == "practice_dashboard":
+                    send_practice_hub(
+                        settings.telegram_token, chat_id, active.practice_hub_message()
+                    )
+                elif action == "practice_basic" or action.startswith("practice_basic_"):
+                    send_basic_practice_menu(
+                        settings.telegram_token, chat_id,
+                        active.handle_basic_practice_action(action), active.practice_chart(),
+                    )
+                elif action == "practice_advanced":
+                    send_practice_menu(
+                        settings.telegram_token, chat_id, active.practice_message(), active.practice_chart()
+                    )
+                elif action.startswith("practice_"):
                     send_practice_menu(
                         settings.telegram_token, chat_id, active.handle_practice_action(action), active.practice_chart()
                     )
@@ -596,13 +685,25 @@ def run_control_bot(settings: Settings) -> None:
                         )
                     continue
                 active = controller if role == "owner" else tester_controller(chat_id)
-                practice_reply = active.handle_practice_command(text)
-                wallet_reply = active.handle_wallet_command(text) if practice_reply is None else None
+                sniffer_reply = active.handle_sniffer_command(text)
+                practice_reply = active.handle_practice_command(text) if sniffer_reply is None else None
+                wallet_reply = (
+                    active.handle_wallet_command(text)
+                    if sniffer_reply is None and practice_reply is None else None
+                )
                 setting_reply = (
                     active.handle_text_setting(text)
-                    if role == "owner" and practice_reply is None and wallet_reply is None else None
+                    if role == "owner" and sniffer_reply is None and practice_reply is None and wallet_reply is None else None
                 )
-                if practice_reply:
+                if sniffer_reply:
+                    if sniffer_reply.mint:
+                        send_research_result(
+                            settings.telegram_token, chat_id, sniffer_reply.message,
+                            sniffer_reply.mint, sniffer_reply.chart_url,
+                        )
+                    else:
+                        send_token_sniffer_menu(settings.telegram_token, chat_id, sniffer_reply.message)
+                elif practice_reply:
                     send_practice_menu(
                         settings.telegram_token, chat_id, practice_reply, active.practice_chart()
                     )

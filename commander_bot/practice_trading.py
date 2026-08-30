@@ -29,6 +29,21 @@ def live_token_profile(mint: str) -> tuple[str, float, str]:
     return symbol, price, str(pair.get("url") or "")
 
 
+def live_market_profile(mint: str) -> dict[str, float | str]:
+    from .live_data import best_pair
+    pair = best_pair(mint)
+    price = float(pair.get("priceUsd") or 0)
+    if price <= 0:
+        raise ValueError("live price unavailable")
+    return {
+        "symbol": str((pair.get("baseToken") or {}).get("symbol") or mint[:6]).upper()[:16],
+        "price": price,
+        "market_cap": float(pair.get("marketCap") or pair.get("fdv") or 0),
+        "liquidity": float((pair.get("liquidity") or {}).get("usd") or 0),
+        "chart": str(pair.get("url") or ""),
+    }
+
+
 def _money(value: float) -> str:
     return f"${value:,.2f}"
 
@@ -95,12 +110,21 @@ class PracticeTrading:
             ])
         else:
             try:
-                token_price = lookup(mint)
+                market = live_market_profile(mint) if price_lookup is None else None
+                token_price = float(market["price"]) if market else lookup(mint)
                 sol_price = lookup(WRAPPED_SOL_MINT)
+                if market and str(market["chart"]):
+                    self.ledger.set_state("practice_selected_chart", str(market["chart"]))
                 lines.extend([
                     "",
-                    f"🎯 Selected: {self.selected_symbol or mint[:6]}",
+                    f"🎯 Selected: {str(market['symbol']) if market else self.selected_symbol or mint[:6]}",
                     f"Price: {_price(token_price)}",
+                    *(
+                        [
+                            f"Market cap/FDV: {_money(float(market['market_cap'])) if market['market_cap'] else 'Unavailable'}",
+                            f"Liquidity: {_money(float(market['liquidity']))}",
+                        ] if market else []
+                    ),
                     f"SOL reference: {_money(sol_price)}",
                     f"Mint: {mint}",
                 ])
@@ -120,6 +144,20 @@ class PracticeTrading:
                 lines.append("\n⚠️ Selected token price is temporarily unavailable.")
         lines.append("\nSimulation only. Buttons never create a Solana transaction.")
         return "\n".join(lines)
+
+    def hub_message(self) -> str:
+        return (
+            "🎮 DEGEN DETECTOR PRACTICE TRADING\n"
+            "Live market data / fake money / zero wallet access\n\n"
+            "🟢 BASIC TRADING\n"
+            "Simple live stats, quick buys, quick sells and wallet access.\n\n"
+            "🧠 ADVANCED TRADING\n"
+            "Custom SOL/USD orders, Paper Snipe, full history, P&L and Top 10 gains.\n\n"
+            "🧪 TOKEN SNIFFER\n"
+            "Paste a Solana contract address for contract, holder and market screening.\n\n"
+            f"Virtual cash: {_money(self.ledger.practice_cash())}\n"
+            f"Hourly buying power: {_money(self.hourly_remaining())}"
+        )
 
     def buy_sol(
         self, sol_amount: float, token_price: float | None = None, sol_price: float | None = None,

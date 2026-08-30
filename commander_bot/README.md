@@ -30,6 +30,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Stage 12.1 top-ten investigated results with green/amber/red classifications and rejection breakdowns
 - Stage 13 per-user Practice Trade terminal with live-priced fake-money orders, rolling hourly buying power, realistic fee/slippage modelling, isolated wallets, history, all-time P&L and top gains
 - Stage 13.2 one-tap Trade with Fake Money buttons on every individual research result and private automatic owner alert
+- Stage 14 organized Practice Trading hub with Basic and Advanced dashboards, user-submitted Token Sniffer screening, and refreshable live market cap/liquidity/price/P&L statistics
 
 ## Quick start
 
@@ -52,6 +53,10 @@ Paper Copy starts disabled. Enable it from **Wallet / KOL Tracker → Paper Copy
 Open **Practice Trade** for the manual training terminal. Every user starts with an isolated virtual balance and can select a token from a research result or use `/trade TOKEN_MINT SYMBOL`. Buys use fixed 0.5/1/2.5/5/10 SOL reference sizes or the Custom Buy flow, which accepts entries such as `0.75 SOL`, `$250`, or `250 USD`. Exits use 25/50/75/100% or Instant Paper Sell. `PRACTICE_HOURLY_BUY_LIMIT_USD` defaults to $2,000 and is a rolling one-hour cap on new fake-money buys, not an hourly cash refill. Fills include configurable simulated slippage and fees. No control signs or broadcasts a blockchain transaction.
 
 Every individual Research Scan result includes **Trade with Fake Money**, **Live Chart**, and **My Practice Profile** controls. The trade button binds the exact scanned mint to the requesting user's isolated practice terminal. Automatic alerts receive the same controls in the owner's private chat; group alerts remain read-only so another group member cannot operate somebody else's practice profile.
+
+Open **Token Sniffer** or use `/sniff TOKEN_MINT` to investigate a user-submitted Solana contract address. Complete reports classify the token as Ape Research, Watchlist or Reject using the existing Commander score and hard vetoes. Missing pair or on-chain verification data is labelled Reject/Unverified rather than guessed. The associated Trade with Fake Money button is still simulation-only.
+
+The **Basic Trading** dashboard keeps only the most common profile, wallet, live refresh, quick-buy, quick-sell and chart controls. **Advanced Trading** adds custom SOL/USD buys, Paper Snipe, complete history, all-time P&L, Top 10 gains and Instant Paper Sell. Telegram's **Refresh Live Stats** updates price, market cap/FDV, liquidity, estimated position value and P&L together. Continuously animated charting remains an external live-chart link because Telegram messages are not streaming chart canvases.
 
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
 
