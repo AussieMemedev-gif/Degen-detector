@@ -31,6 +31,7 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Stage 13 per-user Practice Trade terminal with live-priced fake-money orders, rolling hourly buying power, realistic fee/slippage modelling, isolated wallets, history, all-time P&L and top gains
 - Stage 13.2 one-tap Trade with Fake Money buttons on every individual research result and private automatic owner alert
 - Stage 14 organized Practice Trading hub with Basic and Advanced dashboards, user-submitted Token Sniffer screening, and refreshable live market cap/liquidity/price/P&L statistics
+- Stage 15 GrokStreet-inspired six-agent research with best-effort developer launch-wallet tracing, verifiable narrative-link research, Commander veto, Observation/Paper Research modes, and a shared outcome-learning vault
 
 ## Quick start
 
@@ -56,6 +57,10 @@ Every individual Research Scan result includes **Trade with Fake Money**, **Live
 
 Open **Token Sniffer** or use `/sniff TOKEN_MINT` to investigate a user-submitted Solana contract address. Complete reports classify the token as Ape Research, Watchlist or Reject using the existing Commander score and hard vetoes. Missing pair or on-chain verification data is labelled Reject/Unverified rather than guessed. The associated Trade with Fake Money button is still simulation-only.
 
+Stage 15 adds **Developer Wallet** and **Narrative Research** specialists to the existing Social, On-Chain, Chart and Risk agents. Developer tracing is best-effort and reports its confidence; it never invents a wallet identity. Narrative research scores only verifiable links exposed by current DEX metadata and explicitly labels external sentiment as unavailable until an approved social-data feed is connected. The Commander combines all six reports while preserving every hard Risk veto.
+
+Use **Observation Mode** to investigate and populate the learning vault without automatic simulated-entry claims. Use **Paper Research Mode** to label new observations for paper evaluation. The **Learning Vault** evaluates an earlier observation only when that mint is seen again at a later price, then reports its observed return, win rate and strongest outcomes. These modes never enable funded-wallet execution.
+
 The **Basic Trading** dashboard keeps only the most common profile, wallet, live refresh, quick-buy, quick-sell and chart controls. **Advanced Trading** adds custom SOL/USD buys, Paper Snipe, complete history, all-time P&L, Top 10 gains and Instant Paper Sell. Telegram's **Refresh Live Stats** updates price, market cap/FDV, liquidity, estimated position value and P&L together. Continuously animated charting remains an external live-chart link because Telegram messages are not streaming chart canvases.
 
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
@@ -68,8 +73,8 @@ A candidate is rejected if liquidity is below the configured floor, holder conce
 
 ## Next integrations
 
-1. Helius webhook/RPC adapter for token and wallet events.
-2. DEX market-data adapter for liquidity, volume, price, and pool age.
-3. X and Reddit adapters within approved API terms.
-4. Railway peak-time scheduled jobs.
-5. Historical replay and forward paper-trading evaluation.
+1. Approved X and Reddit adapters for content-level narrative sentiment.
+2. Deeper paginated creator-wallet history and verified developer identity attribution.
+3. Helius webhook delivery for lower-latency token and wallet events.
+4. Historical replay and time-horizon outcome evaluation.
+5. Owner-only micro-trading remains deferred until a separate audited release.

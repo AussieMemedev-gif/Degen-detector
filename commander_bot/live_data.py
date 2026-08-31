@@ -5,7 +5,10 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
 
-from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
+from .agents import (
+    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
+    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
+)
 from .commander import ChiefCommander
 from .config import Settings
 from .models import CommanderDecision, TokenSnapshot
@@ -61,7 +64,7 @@ def best_pair(mint: str) -> Dict[str, Any]:
     return max(candidates, key=lambda pair: float((pair.get("liquidity") or {}).get("usd") or 0))
 
 
-def helius_rpc(api_key: str, method: str, params: List[Any]) -> Dict[str, Any]:
+def helius_rpc(api_key: str, method: str, params: List[Any]) -> Any:
     if not api_key:
         raise ValueError("HELIUS_API_KEY is required for live scans")
     url = "https://mainnet.helius-rpc.com/?api-key=" + urllib.parse.quote(api_key)
@@ -88,6 +91,32 @@ def onchain_risk(mint: str, api_key: str) -> Dict[str, Any]:
     }
 
 
+def developer_wallet_trace(mint: str, api_key: str) -> Dict[str, Any]:
+    """Best-effort trace to the earliest signer in the available mint-history sample."""
+    signatures = helius_rpc(api_key, "getSignaturesForAddress", [mint, {"limit": 1000}])
+    if not isinstance(signatures, list) or not signatures:
+        return {"wallet": "", "confidence": "unavailable", "activity_count": 0}
+    oldest = signatures[-1]
+    signature = str(oldest.get("signature") or "")
+    if not signature:
+        return {"wallet": "", "confidence": "unavailable", "activity_count": len(signatures)}
+    transaction = helius_rpc(
+        api_key, "getTransaction",
+        [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
+    )
+    keys = (((transaction or {}).get("transaction") or {}).get("message") or {}).get("accountKeys") or []
+    signers = [
+        str(item.get("pubkey") or "") for item in keys
+        if isinstance(item, dict) and item.get("signer") and item.get("pubkey")
+    ]
+    confidence = "medium" if len(signatures) < 1000 and signers else "low"
+    return {
+        "wallet": signers[0] if signers else "",
+        "confidence": confidence if signers else "unavailable",
+        "activity_count": len(signatures),
+    }
+
+
 def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) -> TokenSnapshot:
     txns = pair.get("txns") or {}
     m5_txns = txns.get("m5") or {}
@@ -102,6 +131,8 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
     created_ms = int(pair.get("pairCreatedAt") or int(time.time() * 1000))
     price_change = pair.get("priceChange") or {}
     base = pair.get("baseToken") or {}
+    info = pair.get("info") or {}
+    developer = risk.get("developer") or {}
     return TokenSnapshot(
         mint=mint,
         symbol=str(base.get("symbol") or "UNKNOWN"),
@@ -125,6 +156,11 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
         social_data_available=False,
         chart_url=str(pair.get("url") or ""),
         dex_id=str(pair.get("dexId") or "unknown"),
+        developer_wallet=str(developer.get("wallet") or ""),
+        developer_trace_confidence=str(developer.get("confidence") or "unavailable"),
+        developer_activity_count=int(developer.get("activity_count") or 0),
+        social_links_count=len(info.get("socials") or []),
+        website_links_count=len(info.get("websites") or []),
         observed_at=datetime.now(timezone.utc),
     )
 
@@ -132,7 +168,10 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
 def analyse_candidates_with_diagnostics(
     settings: Settings, mints: Iterable[str]
 ) -> tuple[List[tuple[TokenSnapshot, CommanderDecision]], Dict[str, int]]:
-    agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
+    agents = [
+        SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings),
+        DeveloperWalletAgent(), NarrativeResearchAgent(),
+    ]
     commander = ChiefCommander(agents, settings)
     results: List[tuple[TokenSnapshot, CommanderDecision]] = []
     diagnostics: Dict[str, int] = {}
@@ -147,6 +186,11 @@ def analyse_candidates_with_diagnostics(
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
             diagnostics["On-chain verification incomplete"] = diagnostics.get("On-chain verification incomplete", 0) + 1
             continue
+        try:
+            risk["developer"] = developer_wallet_trace(mint, settings.helius_api_key)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            risk["developer"] = {"wallet": "", "confidence": "unavailable", "activity_count": 0}
+            diagnostics["Developer trace incomplete"] = diagnostics.get("Developer trace incomplete", 0) + 1
         try:
             snapshot = snapshot_from_pair(mint, pair, risk)
             results.append((snapshot, commander.decide(snapshot)))
@@ -214,6 +258,7 @@ def build_hot_leaderboard(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
+        ledger.record_learning_observation(snapshot, decision, ledger.get_state("research_mode", "OBSERVATION"))
     return format_hot_leaderboard(results, max(1, min(10, settings.scan_result_limit)))
 
 
@@ -301,8 +346,10 @@ def run_live_scan(settings: Settings) -> str:
         send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
         return message
     ledger = Ledger(settings.database_path)
+    research_mode = ledger.get_state("research_mode", "OBSERVATION")
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
+        ledger.record_learning_observation(snapshot, decision, research_mode)
     displayed = investigated_scan_results(results, settings.scan_result_limit, settings.scan_qualified_score)
     summary = format_scan_summary(
         displayed,
@@ -318,6 +365,7 @@ def run_live_scan(settings: Settings) -> str:
         label = research_class(decision, settings.scan_qualified_score)
         message = (
             f"📌 RESULT {index}/{len(displayed)} — {label}\n"
+            f"Stage 15 mode: {research_mode}\n"
             + format_live_alert(snapshot, decision, settings.bot_display_name)
         )
         send_research_result(
@@ -339,14 +387,16 @@ def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
     if not results:
         return "Automatic scan completed: no valid candidates."
     ledger = Ledger(settings.database_path)
+    research_mode = ledger.get_state("research_mode", "OBSERVATION")
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
+        ledger.record_learning_observation(snapshot, decision, research_mode)
     best_snapshot, best_decision = results[0]
     if best_decision.status == "REJECTED" or best_decision.score < settings.auto_alert_min_score:
         return f"Automatic scan completed: best score {best_decision.score:.1f}; no alert."
     if ledger.recently_alerted(best_snapshot.mint, settings.auto_duplicate_cooldown_minutes, now):
         return f"Automatic scan completed: repeat alert suppressed for {best_snapshot.symbol}."
-    message = "🕒 AUTOMATIC PEAK-TIME ALERT\n" + format_live_alert(
+    message = f"🕒 AUTOMATIC PEAK-TIME ALERT\nStage 15 mode: {research_mode}\n" + format_live_alert(
         best_snapshot, best_decision, settings.bot_display_name
     )
     send_research_result(

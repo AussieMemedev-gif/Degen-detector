@@ -59,6 +59,22 @@ def format_live_alert(token: TokenSnapshot, decision: CommanderDecision, display
         f"Chart: {decision.reports['chart'].score:.1f}/100",
         f"Risk: {decision.reports['risk'].score:.1f}/100",
     ]
+    if "developer" in decision.reports:
+        developer = decision.reports["developer"]
+        wallet = (
+            f"{token.developer_wallet[:6]}…{token.developer_wallet[-4:]}"
+            if token.developer_wallet else "Unverified"
+        )
+        lines.extend([
+            f"Developer: {developer.score:.1f}/100 ({developer.confidence})",
+            f"Launch signer: {wallet}",
+        ])
+    if "narrative" in decision.reports:
+        narrative = decision.reports["narrative"]
+        lines.extend([
+            f"Narrative: {narrative.score:.1f}/100 ({narrative.confidence})",
+            f"Listed links: {token.social_links_count} social | {token.website_links_count} website",
+        ])
     if decision.paper_position_usd:
         lines.append(f"\n🧪 Paper position: ${decision.paper_position_usd:.2f}")
     if decision.vetoes:
@@ -125,6 +141,11 @@ def control_keyboard() -> Dict[str, Any]:
         [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
         [{"text": "🧪 Token Sniffer", "callback_data": "token_sniffer"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
+        [
+            {"text": "🛰 Observation Mode", "callback_data": "observation_mode"},
+            {"text": "🧪 Paper Research", "callback_data": "paper_research_mode"},
+        ],
+        [{"text": "🧠 Learning Vault", "callback_data": "learning_vault"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
         [{"text": "⚙️ Settings", "callback_data": "settings"}],
@@ -140,6 +161,7 @@ def tester_keyboard() -> Dict[str, Any]:
         [{"text": "🎮 Practice Trade", "callback_data": "practice_dashboard"}],
         [{"text": "🧪 Token Sniffer", "callback_data": "token_sniffer"}],
         [{"text": "🔥 Hot Token Leaderboard", "callback_data": "leaderboard"}],
+        [{"text": "🧠 Learning Vault", "callback_data": "learning_vault"}],
         [{"text": "🚀 Launchpads / PF", "callback_data": "launchpads"}],
         [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
         [{"text": "📖 Help / Instructions", "callback_data": "help"}],

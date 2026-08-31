@@ -3,7 +3,10 @@ import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
 from unittest.mock import patch
-from commander_bot.agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
+from commander_bot.agents import (
+    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
+    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
+)
 from commander_bot.commander import ChiefCommander
 from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
@@ -523,6 +526,46 @@ class CommanderTests(unittest.TestCase):
             first_terminal.buy_sol(1, token_price=2, sol_price=100)
             self.assertLess(first.practice_cash(), second.practice_cash())
             self.assertEqual(second.practice_positions(), [])
+
+    def test_stage15_six_agent_commander_includes_developer_and_narrative(self):
+        token = replace(
+            demo_candidate(), developer_wallet="11111111111111111111111111111111",
+            developer_trace_confidence="medium", developer_activity_count=12,
+            social_links_count=2, website_links_count=1,
+        )
+        agents = [
+            SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(self.settings),
+            DeveloperWalletAgent(), NarrativeResearchAgent(),
+        ]
+        decision = ChiefCommander(agents, self.settings).decide(token)
+        self.assertEqual(set(decision.reports), {"social", "onchain", "chart", "risk", "developer", "narrative"})
+        self.assertIn("developer:", " ".join(decision.reasons))
+
+    def test_stage15_learning_vault_evaluates_repeat_observations(self):
+        ledger = Ledger(":memory:")
+        first = replace(demo_candidate(), price_usd=1.0)
+        second = replace(demo_candidate(), price_usd=1.5)
+        decision = self.commander.decide(first)
+        ledger.record_learning_observation(first, decision, "OBSERVATION")
+        ledger.record_learning_observation(second, decision, "PAPER")
+        stats = ledger.learning_vault_stats()
+        self.assertEqual(stats["total"], 2)
+        self.assertEqual(stats["evaluated"], 1)
+        self.assertAlmostEqual(stats["average_return_pct"], 50.0)
+
+    def test_stage15_research_modes_never_enable_live_execution(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        self.assertIn("OBSERVATION MODE", controller.handle("observation_mode"))
+        self.assertEqual(controller.ledger.get_state("research_mode"), "OBSERVATION")
+        self.assertIn("PAPER RESEARCH MODE", controller.handle("paper_research_mode"))
+        self.assertEqual(controller.ledger.get_state("research_mode"), "PAPER")
+        self.assertIn("Wallet access: DISABLED", controller.status_message())
+
+    def test_stage15_learning_vault_dashboard_is_truthfully_empty_at_start(self):
+        controller = BotController(Settings(database_path=":memory:"))
+        message = controller.handle("learning_vault")
+        self.assertIn("Observations stored: 0", message)
+        self.assertIn("Funded-wallet execution is disabled", message)
 
 
 if __name__ == "__main__":

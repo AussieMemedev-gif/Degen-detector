@@ -1,0 +1,27 @@
+DEGEN DETECTOR — STAGE 15
+=========================
+
+This package is a complete upgrade from the verified Stage 14 source.
+
+Included in Stage 15:
+- Six-agent analysis: Social, On-Chain, Chart, Risk, Developer Wallet, Narrative Research
+- Chief Commander hard-veto protection
+- Best-effort developer launch-wallet tracing with confidence labels
+- Verifiable narrative-link scoring without invented social sentiment
+- Observation Mode and Paper Research Mode
+- Shared learning vault with later-price outcome evaluation
+- Telegram learning dashboard and performance leaderboard
+- All Stage 14 Token Sniffer, Basic/Advanced dashboard and fake-money features
+- Funded-wallet/live execution remains disabled
+
+Upgrade an existing repository:
+1. Upload this ZIP to the repository root.
+2. Run: unzip -o degen-detector-stage15-grokstreet-learning-vault.zip
+3. Run: python -m unittest discover -s commander_bot/tests -v
+4. Confirm: Ran 42 tests / OK
+5. Commit and push the extracted files.
+
+Railway start command:
+python -m commander_bot.main --controls
+
+Never put a Telegram token, private key, seed phrase or funded-wallet secret in source code.

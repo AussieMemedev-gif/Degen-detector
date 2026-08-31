@@ -13,7 +13,10 @@ from .notifications import (
 from .storage import Ledger
 
 
-VALID_ACTIONS = {"scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop", "leaderboard"}
+VALID_ACTIONS = {
+    "scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop",
+    "leaderboard", "observation_mode", "paper_research_mode", "learning_vault",
+}
 
 
 class BotController:
@@ -66,6 +69,7 @@ class BotController:
 
     def status_message(self) -> str:
         mode = self.mode
+        research_mode = self.ledger.get_state("research_mode", "OBSERVATION")
         settings = self.automatic_settings()
         expiry = self.ledger.get_state("manual_until", "")
         detail = f"\nManual session ends: {expiry}" if mode == "MANUAL" and expiry else ""
@@ -81,6 +85,7 @@ class BotController:
         return (
             f"🛰️ DEGEN DETECTOR STATUS\n"
             f"Mode: {mode}\n"
+            f"Stage 15 research: {research_mode}\n"
             f"Trading: PAPER ONLY\n"
             f"Wallet access: DISABLED{detail}{auto_detail}"
         )
@@ -92,6 +97,7 @@ class BotController:
             "🧪 DEGEN DETECTOR BETA ACCESS\n"
             "Role: Approved tester\n"
             "Research tools: ENABLED\n"
+            f"Stage 15 research: {self.ledger.get_state('research_mode', 'OBSERVATION')}\n"
             "Trading: PAPER ONLY\n"
             "Wallet access: DISABLED\n"
             f"Personal paper copy: {paper_copy}\n"
@@ -107,6 +113,7 @@ class BotController:
             "🟡 Watchlist — passed hard vetoes but remains below the qualification threshold.\n"
             "🔴 Rejected — failed one or more hard safety checks; investigation only.\n"
             "🔥 Leaderboard — rank safe candidates by momentum and holding strength.\n"
+            "🧠 Learning Vault — compare earlier observations with later market prices.\n"
             "🚀 Launchpads / PF — inspect Solana launch sources.\n"
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
@@ -335,6 +342,22 @@ class BotController:
                 return "🚨 Leaderboard blocked: Emergency Stop is enabled."
             from .live_data import build_hot_leaderboard
             return build_hot_leaderboard(self.settings)
+        if action == "observation_mode":
+            self.ledger.set_state("research_mode", "OBSERVATION")
+            return (
+                "🛰 OBSERVATION MODE ENABLED\n"
+                "The six-agent system will investigate and learn without creating automatic simulated entries. "
+                "Manual Practice Trade remains available."
+            )
+        if action == "paper_research_mode":
+            self.ledger.set_state("research_mode", "PAPER")
+            return (
+                "🧪 PAPER RESEARCH MODE ENABLED\n"
+                "Qualified calls will be stored as paper research observations for outcome tracking. "
+                "No blockchain transaction or wallet signing is possible."
+            )
+        if action == "learning_vault":
+            return self.learning_vault_message()
         if action == "manual_on":
             until = datetime.now(timezone.utc) + timedelta(minutes=self.settings.manual_session_minutes)
             self.ledger.set_state("mode", "MANUAL")
@@ -351,6 +374,30 @@ class BotController:
         self.ledger.set_state("mode", "EMERGENCY_STOP" if action == "emergency_stop" else "OFF")
         self.ledger.set_state("manual_until", "")
         return "🚨 Emergency stop enabled. All scanning is blocked." if action == "emergency_stop" else "⏹️ Scanning stopped."
+
+    def learning_vault_message(self) -> str:
+        stats = self.ledger.learning_vault_stats()
+        evaluated = stats["evaluated"]
+        win_rate = (stats["winners"] / evaluated * 100) if evaluated else 0.0
+        lines = [
+            "🧠 STAGE 15 SHARED LEARNING VAULT",
+            "All specialist agents and the Commander learn from this outcome ledger.",
+            "",
+            f"Observations stored: {stats['total']}",
+            f"Later-price outcomes: {evaluated}",
+            f"Positive outcomes: {stats['winners']} ({win_rate:.1f}%)",
+            f"Average observed return: {stats['average_return_pct']:+.2f}%",
+        ]
+        if stats["best"]:
+            lines.append("\nTOP OBSERVED OUTCOMES")
+            lines.extend(
+                f"{index}. {symbol}: {return_pct:+.2f}%"
+                for index, (symbol, return_pct) in enumerate(stats["best"], start=1)
+            )
+        else:
+            lines.append("\nOutcomes appear after a token is observed again at a later price.")
+        lines.append("\nPaper/observation data only. Funded-wallet execution is disabled.")
+        return "\n".join(lines)
 
     def set_preference(self, action: str) -> str:
         parts = action.split("_")
@@ -581,6 +628,7 @@ def run_control_bot(settings: Settings) -> None:
                 active = controller if role == "owner" else tester_controller(chat_id)
                 owner_only = {
                     "settings", "manual_on", "stop", "automatic", "emergency_stop",
+                    "observation_mode", "paper_research_mode",
                 }
                 if role != "owner" and (
                     action in owner_only or action.startswith(("interval_", "window_", "score_", "cooldown_"))

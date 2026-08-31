@@ -1,5 +1,8 @@
 import argparse
-from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
+from .agents import (
+    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
+    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
+)
 from .commander import ChiefCommander
 from .config import Settings
 from .models import TokenSnapshot
@@ -23,7 +26,10 @@ def run_once(settings: Settings) -> str:
     if settings.live_data_enabled:
         from .live_data import run_live_scan
         return run_live_scan(settings)
-    agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
+    agents = [
+        SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings),
+        DeveloperWalletAgent(), NarrativeResearchAgent(),
+    ]
     decision = ChiefCommander(agents, settings).decide(demo_candidate())
     Ledger(settings.database_path).record(demo_candidate(), decision)
     message = format_alert(decision, settings.bot_display_name)

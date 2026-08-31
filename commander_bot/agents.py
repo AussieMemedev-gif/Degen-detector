@@ -70,3 +70,43 @@ class RiskSecurityAgent:
         score = 100 - concentration_penalty - slippage_penalty - len(vetoes) * 20
         reasons = [f"top-10 holders {token.top10_holder_pct:.1f}%", f"estimated slippage {token.estimated_slippage_pct:.2f}%"]
         return AgentReport(self.name, clamp(score), "high" if not vetoes else "low", reasons, vetoes)
+
+
+class DeveloperWalletAgent:
+    """Best-effort launch-wallet research; never invents an identity when tracing is incomplete."""
+
+    name = "developer"
+
+    def analyse(self, token: TokenSnapshot) -> AgentReport:
+        if not token.developer_wallet:
+            return AgentReport(
+                self.name, 35.0, "low",
+                ["developer wallet could not be verified from available launch history"],
+            )
+        score = 70.0
+        reasons = [
+            f"launch signer {token.developer_wallet[:6]}…{token.developer_wallet[-4:]}",
+            f"mint activity sample {token.developer_activity_count} signature(s)",
+        ]
+        if token.developer_activity_count >= 1000:
+            score -= 15
+            reasons.append("activity sample reached trace limit; earlier history may exist")
+        return AgentReport(self.name, clamp(score), token.developer_trace_confidence, reasons)
+
+
+class NarrativeResearchAgent:
+    """Scores verifiable public project links without pretending an external social feed is connected."""
+
+    name = "narrative"
+
+    def analyse(self, token: TokenSnapshot) -> AgentReport:
+        links = token.social_links_count + token.website_links_count
+        score = min(token.social_links_count * 18, 54) + min(token.website_links_count * 20, 40)
+        reasons = [
+            f"{token.social_links_count} listed social link(s)",
+            f"{token.website_links_count} listed website(s)",
+        ]
+        if not links:
+            reasons.append("no verifiable narrative links in current DEX metadata")
+        reasons.append("content sentiment feed not connected")
+        return AgentReport(self.name, clamp(score), "medium" if links else "low", reasons)

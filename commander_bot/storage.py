@@ -41,6 +41,11 @@ class Ledger:
             symbol TEXT NOT NULL, side TEXT NOT NULL, token_quantity REAL NOT NULL,
             fill_price_usd REAL NOT NULL, gross_usd REAL NOT NULL, fee_usd REAL NOT NULL,
             realized_pnl_usd REAL NOT NULL DEFAULT 0, sol_size REAL NOT NULL DEFAULT 0)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS learning_vault (
+            id INTEGER PRIMARY KEY, observed_at TEXT NOT NULL, mint TEXT NOT NULL,
+            symbol TEXT NOT NULL, commander_score REAL NOT NULL, decision_status TEXT NOT NULL,
+            research_mode TEXT NOT NULL, observed_price REAL NOT NULL,
+            evaluated_at TEXT NOT NULL DEFAULT '', outcome_return_pct REAL)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -66,6 +71,50 @@ class Ledger:
             (key, value),
         )
         self.connection.commit()
+
+    def record_learning_observation(
+        self, token: TokenSnapshot, decision: CommanderDecision, research_mode: str,
+    ) -> None:
+        """Evaluate prior sightings at the latest price, then store the new observation."""
+        if token.price_usd <= 0:
+            return
+        now = token.observed_at.astimezone(timezone.utc).isoformat()
+        with self.connection:
+            prior = self.connection.execute(
+                "SELECT id,observed_price FROM learning_vault "
+                "WHERE mint=? AND evaluated_at='' ORDER BY observed_at",
+                (token.mint,),
+            ).fetchall()
+            for row_id, observed_price in prior:
+                if float(observed_price) > 0:
+                    outcome = ((token.price_usd / float(observed_price)) - 1) * 100
+                    self.connection.execute(
+                        "UPDATE learning_vault SET evaluated_at=?,outcome_return_pct=? WHERE id=?",
+                        (now, outcome, row_id),
+                    )
+            self.connection.execute(
+                "INSERT INTO learning_vault(observed_at,mint,symbol,commander_score,decision_status,"
+                "research_mode,observed_price) VALUES(?,?,?,?,?,?,?)",
+                (now, token.mint, token.symbol, decision.score, decision.status,
+                 research_mode.upper(), token.price_usd),
+            )
+
+    def learning_vault_stats(self) -> dict:
+        total = int(self.connection.execute("SELECT COUNT(*) FROM learning_vault").fetchone()[0])
+        row = self.connection.execute(
+            "SELECT COUNT(*),COALESCE(AVG(outcome_return_pct),0),"
+            "COALESCE(SUM(CASE WHEN outcome_return_pct>0 THEN 1 ELSE 0 END),0) "
+            "FROM learning_vault WHERE evaluated_at<>''"
+        ).fetchone()
+        evaluated, average, winners = int(row[0]), float(row[1]), int(row[2])
+        best = self.connection.execute(
+            "SELECT symbol,outcome_return_pct FROM learning_vault "
+            "WHERE evaluated_at<>'' ORDER BY outcome_return_pct DESC LIMIT 5"
+        ).fetchall()
+        return {
+            "total": total, "evaluated": evaluated, "average_return_pct": average,
+            "winners": winners, "best": best,
+        }
 
     def recently_alerted(self, mint: str, cooldown_minutes: int, now: datetime) -> bool:
         row = self.connection.execute(

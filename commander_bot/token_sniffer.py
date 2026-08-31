@@ -2,10 +2,13 @@
 
 from dataclasses import dataclass
 
-from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
+from .agents import (
+    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
+    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
+)
 from .commander import ChiefCommander
 from .config import Settings
-from .live_data import best_pair, onchain_risk, snapshot_from_pair
+from .live_data import best_pair, developer_wallet_trace, onchain_risk, snapshot_from_pair
 
 
 @dataclass(frozen=True)
@@ -53,8 +56,15 @@ def sniff_token(settings: Settings, mint: str) -> SnifferResult:
             mint,
             chart,
         )
+    try:
+        risk["developer"] = developer_wallet_trace(mint, settings.helius_api_key)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+        risk["developer"] = {"wallet": "", "confidence": "unavailable", "activity_count": 0}
     snapshot = snapshot_from_pair(mint, pair, risk)
-    agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
+    agents = [
+        SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings),
+        DeveloperWalletAgent(), NarrativeResearchAgent(),
+    ]
     decision = ChiefCommander(agents, settings).decide(snapshot)
     if decision.vetoes:
         signal = "🔴 REJECT"
@@ -81,6 +91,13 @@ def sniff_token(settings: Settings, mint: str) -> SnifferResult:
         f"Freeze authority: {'ACTIVE ⚠️' if snapshot.freeze_authority_active else 'Revoked ✅'}",
         f"Observed sells: {'Yes ✅' if snapshot.sellable else 'No ⚠️'}",
         f"Estimated $25 slippage: {snapshot.estimated_slippage_pct:.2f}%",
+        "",
+        "STAGE 15 INTELLIGENCE",
+        f"Developer trace: {decision.reports['developer'].score:.1f}/100 "
+        f"({decision.reports['developer'].confidence})",
+        f"Launch signer: {snapshot.developer_wallet or 'Unverified'}",
+        f"Narrative links: {snapshot.social_links_count} social | {snapshot.website_links_count} website",
+        "External social sentiment: Not connected",
     ]
     if decision.vetoes:
         lines.extend(["", "REJECTION REASONS"])
