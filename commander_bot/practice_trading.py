@@ -10,7 +10,19 @@ from .storage import Ledger
 
 
 WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112"
+WRAPPED_ETH_MINT = "ethereum:0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 PriceLookup = Callable[[str], float]
+
+
+def split_asset(asset: str) -> tuple[str, str]:
+    if ":" in asset:
+        chain, address = asset.split(":", 1)
+        return chain, address
+    return "solana", asset
+
+
+def asset_id(chain: str, address: str) -> str:
+    return f"robinhood:{address.lower()}" if chain == "robinhood" else address
 
 
 def live_price(mint: str) -> float:
@@ -27,21 +39,6 @@ def live_token_profile(mint: str) -> tuple[str, float, str]:
     price = float(pair.get("priceUsd") or 0)
     symbol = str((pair.get("baseToken") or {}).get("symbol") or mint[:6]).upper()[:16]
     return symbol, price, str(pair.get("url") or "")
-
-
-def live_market_profile(mint: str) -> dict[str, float | str]:
-    from .live_data import best_pair
-    pair = best_pair(mint)
-    price = float(pair.get("priceUsd") or 0)
-    if price <= 0:
-        raise ValueError("live price unavailable")
-    return {
-        "symbol": str((pair.get("baseToken") or {}).get("symbol") or mint[:6]).upper()[:16],
-        "price": price,
-        "market_cap": float(pair.get("marketCap") or pair.get("fdv") or 0),
-        "liquidity": float((pair.get("liquidity") or {}).get("usd") or 0),
-        "chart": str(pair.get("url") or ""),
-    }
 
 
 def _money(value: float) -> str:
@@ -75,13 +72,22 @@ class PracticeTrading:
     def selected_chart(self) -> str:
         return self.ledger.get_state("practice_selected_chart", "")
 
+    @property
+    def selected_chain(self) -> str:
+        return split_asset(self.selected_mint)[0] if self.selected_mint else "solana"
+
+    @property
+    def selected_address(self) -> str:
+        return split_asset(self.selected_mint)[1] if self.selected_mint else ""
+
     def select_token(self, mint: str, symbol: str = "") -> str:
         detected_symbol, price, chart = live_token_profile(mint)
         clean_symbol = (symbol or detected_symbol).upper()[:16]
         self.ledger.set_state("practice_selected_mint", mint)
         self.ledger.set_state("practice_selected_symbol", clean_symbol)
         self.ledger.set_state("practice_selected_chart", chart)
-        return f"✅ {clean_symbol} selected at {_price(price)}. No real transaction was submitted."
+        chain, address = split_asset(mint)
+        return f"✅ {clean_symbol} selected on {chain.title()} at {_price(price)}.\nCA: {address}\nNo real transaction was submitted."
 
     def hourly_remaining(self, now: datetime | None = None) -> float:
         now = now or datetime.now(timezone.utc)
@@ -110,23 +116,16 @@ class PracticeTrading:
             ])
         else:
             try:
-                market = live_market_profile(mint) if price_lookup is None else None
-                token_price = float(market["price"]) if market else lookup(mint)
-                sol_price = lookup(WRAPPED_SOL_MINT)
-                if market and str(market["chart"]):
-                    self.ledger.set_state("practice_selected_chart", str(market["chart"]))
+                token_price = lookup(mint)
+                native = WRAPPED_ETH_MINT if self.selected_chain == "robinhood" else WRAPPED_SOL_MINT
+                sol_price = lookup(native)
                 lines.extend([
                     "",
-                    f"🎯 Selected: {str(market['symbol']) if market else self.selected_symbol or mint[:6]}",
+                    f"🎯 Selected: {self.selected_symbol or mint[:6]}",
                     f"Price: {_price(token_price)}",
-                    *(
-                        [
-                            f"Market cap/FDV: {_money(float(market['market_cap'])) if market['market_cap'] else 'Unavailable'}",
-                            f"Liquidity: {_money(float(market['liquidity']))}",
-                        ] if market else []
-                    ),
-                    f"SOL reference: {_money(sol_price)}",
-                    f"Mint: {mint}",
+                    f"{'ETH' if self.selected_chain == 'robinhood' else 'SOL'} reference: {_money(sol_price)}",
+                    f"Network: {split_asset(mint)[0].title()}",
+                    f"CA: {split_asset(mint)[1]}",
                 ])
                 position = self.ledger.practice_position(mint)
                 if position:
@@ -138,6 +137,10 @@ class PracticeTrading:
                         f"Average entry: {_price(float(position[3]))}",
                         f"Unrealized P&L: {pnl:+,.2f} USD ({pnl_pct:+.1f}%)",
                     ])
+                    stop = self.stop_loss_percent(mint)
+                    if stop:
+                        trigger = float(position[3]) * (1 - stop / 100)
+                        lines.append(f"Stop loss: -{stop:g}% (trigger {_price(trigger)})")
                 else:
                     lines.append("Position: None")
             except (OSError, RuntimeError, ValueError, KeyError, TypeError):
@@ -145,19 +148,51 @@ class PracticeTrading:
         lines.append("\nSimulation only. Buttons never create a Solana transaction.")
         return "\n".join(lines)
 
-    def hub_message(self) -> str:
-        return (
-            "🎮 DEGEN DETECTOR PRACTICE TRADING\n"
-            "Live market data / fake money / zero wallet access\n\n"
-            "🟢 BASIC TRADING\n"
-            "Simple live stats, quick buys, quick sells and wallet access.\n\n"
-            "🧠 ADVANCED TRADING\n"
-            "Custom SOL/USD orders, Paper Snipe, full history, P&L and Top 10 gains.\n\n"
-            "🧪 TOKEN SNIFFER\n"
-            "Paste a Solana contract address for contract, holder and market screening.\n\n"
-            f"Virtual cash: {_money(self.ledger.practice_cash())}\n"
-            f"Hourly buying power: {_money(self.hourly_remaining())}"
-        )
+    def stop_loss_percent(self, mint: str | None = None) -> float:
+        mint = mint or self.selected_mint
+        if not mint:
+            return 0.0
+        try:
+            return float(self.ledger.get_state(f"practice_stop:{mint}", "0"))
+        except ValueError:
+            return 0.0
+
+    def set_stop_loss(self, percent: float) -> str:
+        mint = self.selected_mint
+        position = self.ledger.practice_position(mint) if mint else None
+        if not position:
+            return "⛔ Buy the selected token with fake money before setting a stop loss."
+        if percent == 0:
+            self.ledger.set_state(f"practice_stop:{mint}", "0")
+            return "✅ Practice stop loss removed."
+        if percent < 1 or percent > 95:
+            return "Enter a stop loss from 1% to 95%, or 0 to remove it."
+        self.ledger.set_state(f"practice_stop:{mint}", f"{percent:g}")
+        trigger = float(position[3]) * (1 - percent / 100)
+        return f"🛡️ Practice stop loss set to -{percent:g}% at approximately {_price(trigger)}."
+
+    def check_stop_losses(self, price_lookup: PriceLookup | None = None) -> list[str]:
+        lookup = price_lookup or live_price
+        messages: list[str] = []
+        selected_before = (self.selected_mint, self.selected_symbol, self.selected_chart)
+        for mint, symbol, _, entry, *_ in self.ledger.practice_positions():
+            percent = self.stop_loss_percent(mint)
+            if not percent:
+                continue
+            try:
+                current = lookup(mint)
+            except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+                continue
+            if current <= float(entry) * (1 - percent / 100):
+                self.ledger.set_state("practice_selected_mint", mint)
+                self.ledger.set_state("practice_selected_symbol", symbol)
+                result = self.sell_percent(100, token_price=current)
+                self.ledger.set_state(f"practice_stop:{mint}", "0")
+                messages.append(f"🛡️ PRACTICE STOP LOSS TRIGGERED\n{result}")
+        self.ledger.set_state("practice_selected_mint", selected_before[0])
+        self.ledger.set_state("practice_selected_symbol", selected_before[1])
+        self.ledger.set_state("practice_selected_chart", selected_before[2])
+        return messages
 
     def buy_sol(
         self, sol_amount: float, token_price: float | None = None, sol_price: float | None = None,
@@ -169,7 +204,8 @@ class PracticeTrading:
         now = now or datetime.now(timezone.utc)
         try:
             token_price = token_price or live_price(mint)
-            sol_price = sol_price or live_price(WRAPPED_SOL_MINT)
+            reference = WRAPPED_ETH_MINT if self.selected_chain == "robinhood" else WRAPPED_SOL_MINT
+            sol_price = sol_price or live_price(reference)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             return "⚠️ Live price unavailable. No paper order was created."
         gross = sol_amount * sol_price
@@ -187,7 +223,7 @@ class PracticeTrading:
         return (
             "🎯 PAPER BUY FILLED\n"
             f"Token: {self.selected_symbol or mint[:6]}\n"
-            f"Size: {sol_amount:g} SOL ({_money(gross)})\n"
+            f"Size: {sol_amount:g} {'ETH' if self.selected_chain == 'robinhood' else 'SOL'} ({_money(gross)})\n"
             f"Fill: {_price(fill)}\nFee: {_money(fee)}\n"
             f"Tokens: {quantity:,.6f}\n\nNo wallet transaction was submitted."
         )
@@ -199,7 +235,8 @@ class PracticeTrading:
         if usd_amount <= 0:
             return "Enter a paper-buy amount greater than zero."
         try:
-            reference_sol_price = sol_price or live_price(WRAPPED_SOL_MINT)
+            reference = WRAPPED_ETH_MINT if self.selected_chain == "robinhood" else WRAPPED_SOL_MINT
+            reference_sol_price = sol_price or live_price(reference)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             return "⚠️ SOL reference price unavailable. No paper order was created."
         return self.buy_sol(

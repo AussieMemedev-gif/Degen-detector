@@ -1,1 +1,0 @@
-# Degen Detector Stage 15 uses Python's standard library only.

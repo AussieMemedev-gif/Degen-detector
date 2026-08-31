@@ -6,17 +6,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .config import Settings
 from .access import TelegramAccess, user_database_path
 from .notifications import (
-    answer_callback, delete_webhook, get_updates, send_control_menu, send_launchpad_menu, send_paper_copy_menu,
-    send_basic_practice_menu, send_practice_hub, send_practice_menu, send_research_result,
-    send_settings_menu, send_telegram, send_tester_menu, send_token_sniffer_menu, send_wallet_menu,
+    answer_callback, delete_webhook, get_updates, set_bot_commands, send_admin_menu, send_control_menu,
+    send_discover_menu, send_launchpad_menu, send_learn_menu, send_paper_copy_menu, send_practice_menu,
+    send_ca_chain_menu, send_real_trade_menu, send_scan_hub, send_settings_menu, send_telegram,
+    send_tester_menu, send_wallet_menu,
 )
 from .storage import Ledger
 
 
-VALID_ACTIONS = {
-    "scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop",
-    "leaderboard", "observation_mode", "paper_research_mode", "learning_vault",
-}
+VALID_ACTIONS = {"scan_once", "status", "manual_on", "stop", "automatic", "emergency_stop", "leaderboard"}
 
 
 class BotController:
@@ -69,7 +67,6 @@ class BotController:
 
     def status_message(self) -> str:
         mode = self.mode
-        research_mode = self.ledger.get_state("research_mode", "OBSERVATION")
         settings = self.automatic_settings()
         expiry = self.ledger.get_state("manual_until", "")
         detail = f"\nManual session ends: {expiry}" if mode == "MANUAL" and expiry else ""
@@ -83,27 +80,94 @@ class BotController:
                 f"\nLast auto result: {self.ledger.get_state('last_auto_result', 'Waiting for peak window')}"
             )
         return (
-            f"🛰️ DEGEN DETECTOR STATUS\n"
-            f"Mode: {mode}\n"
-            f"Stage 15 research: {research_mode}\n"
-            f"Trading: PAPER ONLY\n"
-            f"Wallet access: DISABLED{detail}{auto_detail}"
+            f"🛰️ DEGEN DETECTOR\n\n"
+            f"System: 🟢 Online\n"
+            f"Scan mode: {mode}\n"
+            f"Trading: 🧪 PAPER ONLY (practice funds)\n"
+            f"Wallet access: 🔒 None{detail}{auto_detail}\n\n"
+            "Choose an option below. New here? Start with 🎓 Learn."
         )
 
     def tester_status_message(self) -> str:
         paper_copy = self.ledger.get_state("paper_copy_enabled", "OFF")
         scans = self._pref_int("tester_scan_count", 0)
         return (
-            "🧪 DEGEN DETECTOR BETA ACCESS\n"
-            "Role: Approved tester\n"
-            "Research tools: ENABLED\n"
-            f"Stage 15 research: {self.ledger.get_state('research_mode', 'OBSERVATION')}\n"
-            "Trading: PAPER ONLY\n"
-            "Wallet access: DISABLED\n"
+            "💎 DEGEN DETECTOR\n\n"
+            "System: 🟢 Online\n"
+            "Access: ✅ Approved tester\n"
+            "Research tools: ✅ Enabled\n"
+            "Trading: 🧪 Practice only\n"
+            "Wallet access: 🔒 None\n"
             f"Personal paper copy: {paper_copy}\n"
-            f"Research scans used: {scans}\n"
-            "Owner controls and live execution: LOCKED"
+            f"Research scans used: {scans}\n\n"
+            "Choose an option below. New here? Start with 🎓 Learn."
         )
+
+    def scan_hub_message(self) -> str:
+        return (
+            "🔎 TOKEN RESEARCH SCAN\n\n"
+            "Choose Solana for the full Commander and on-chain safety scan, or Robinhood Chain "
+            "for an early market radar using indexed liquidity, volume and buy/sell activity.\n\n"
+            "🟢 Qualified — strongest research result\n"
+            "🟡 Watch — interesting, but needs caution\n"
+            "🔴 Rejected — failed a safety rule\n\n"
+            "Robinhood Chain is newer, so its radar is labelled market-first until equivalent "
+            "contract and holder verification is available. A score is not a promise of profit."
+        )
+
+    def discover_message(self) -> str:
+        return (
+            "🔥 DISCOVER TOKENS\n\n"
+            "Leaderboard ranks safer momentum candidates. Launchpads lets you browse "
+            "Pump.fun, BONK, Raydium, Meteora and Jupiter sources.\n\n"
+            "Use this area to build a watchlist. Use Scan for the fuller safety report."
+        )
+
+    def learn_message(self) -> str:
+        return (
+            "🎓 BEGINNER LEARNING CENTRE\n\n"
+            "Learn the traffic-light scores, check risks before acting, and practise with "
+            "fake money. You never need to connect a wallet or share a private key."
+        )
+
+    def score_guide_message(self) -> str:
+        return (
+            "🚦 HOW TO READ A RESULT\n\n"
+            "🟢 QUALIFIED: Passed hard safety checks and reached the research threshold. "
+            "Still high risk—check the chart and position size.\n\n"
+            "🟡 WATCH: Passed hard vetoes but the overall evidence is weaker. Wait for "
+            "confirmation rather than chasing.\n\n"
+            "🔴 REJECTED: Failed one or more safety gates such as liquidity, holder "
+            "concentration, active authorities, sell evidence or slippage. Do not paper-buy "
+            "it from the result.\n\n"
+            "The score combines Social 20%, On-chain 30%, Chart 20% and Risk 30%."
+        )
+
+    def safety_guide_message(self) -> str:
+        return (
+            "🛡️ FIVE-CHECK SAFETY RULE\n\n"
+            "1. Prefer 🟢 results; never treat a score as a guarantee.\n"
+            "2. Check liquidity, top-holder concentration and mint/freeze authority.\n"
+            "3. Open the live chart; avoid sudden vertical pumps and collapsing volume.\n"
+            "4. Practise first and use a small position you could afford to lose.\n"
+            "5. Never send a seed phrase or private key—Degen Detector will never ask.\n\n"
+            "Meme tokens can lose most or all of their value very quickly."
+        )
+
+    def practice_guide_message(self) -> str:
+        return (
+            "🎮 PRACTICE WALKTHROUGH\n\n"
+            "1. Run a Scan.\n"
+            "2. Open one result and tap Trade with Fake Money.\n"
+            "3. Review the selected token and live chart.\n"
+            "4. Choose a small SOL-size paper buy or enter a custom fake amount.\n"
+            "5. Use Wallet to view the position.\n"
+            "6. Sell 25%, 50%, 75% or 100% and review P&L.\n\n"
+            "All funds are simulated. No blockchain transaction is created."
+        )
+
+    def admin_message(self) -> str:
+        return self.status_message() + "\n\n🛠 OWNER CONTROLS\nChanges here affect global scanning."
 
     def help_message(self) -> str:
         return (
@@ -113,12 +177,9 @@ class BotController:
             "🟡 Watchlist — passed hard vetoes but remains below the qualification threshold.\n"
             "🔴 Rejected — failed one or more hard safety checks; investigation only.\n"
             "🔥 Leaderboard — rank safe candidates by momentum and holding strength.\n"
-            "🧠 Learning Vault — compare earlier observations with later market prices.\n"
             "🚀 Launchpads / PF — inspect Solana launch sources.\n"
             "👛 Wallet Tracker — monitor public addresses only.\n"
             "🧪 Paper Copy — simulate tracked-wallet activity.\n\n"
-            "🧪 Token Sniffer — paste a Solana contract address for a scored Ape research, "
-            "Watchlist or Reject classification. Use /sniff TOKEN_MINT.\n"
             "🎮 Practice Trade — trade live-priced tokens with isolated fake funds. "
             "Choose Trade with Fake Money below a scan result or use /trade TOKEN_MINT SYMBOL. "
             "The terminal includes fixed SOL buys, 25/50/75/100% exits, instant paper sell, "
@@ -135,9 +196,6 @@ class BotController:
 
     def practice_message(self) -> str:
         return self._practice().terminal_message()
-
-    def practice_hub_message(self) -> str:
-        return self._practice().hub_message()
 
     def practice_chart(self) -> str:
         return self._practice().selected_chart
@@ -169,12 +227,28 @@ class BotController:
             return (
                 "✍️ CUSTOM PAPER BUY\n\n"
                 "Enter a custom amount in either format:\n"
-                "• 0.75 SOL\n"
+                "• 0.75 SOL or 0.05 ETH\n"
                 "• $250 or 250 USD\n\n"
                 "A plain number such as 0.75 is treated as SOL.\n"
                 "Send /cancel to stop. The live quote, simulated fee, slippage, virtual cash "
                 f"and ${self.settings.practice_hourly_buy_limit_usd:,.0f} rolling hourly limit "
                 "will be checked before the fill."
+            )
+        if action == "practice_stop_loss":
+            self.ledger.set_state("practice_pending_input", "STOP_LOSS")
+            return (
+                "🛡️ SET PRACTICE STOP LOSS\n\n"
+                "Enter the percentage below your average entry that should trigger a full simulated sell.\n"
+                "Examples: 10% or 25\n"
+                "Enter 0 to remove the stop, or /cancel to stop.\n\n"
+                "Stop checks use live quotes and can be delayed by API or service interruptions."
+            )
+        if action == "practice_manual_sell":
+            self.ledger.set_state("practice_pending_input", "MANUAL_SELL")
+            return (
+                "✍️ MANUAL PAPER SELL\n\n"
+                "Enter the percentage of the selected position to sell, from 1% to 100%.\n"
+                "Examples: 33% or 100\n\nSend /cancel to stop."
             )
         if action == "practice_wallet":
             return practice.wallet_message()
@@ -204,67 +278,6 @@ class BotController:
                 pass
         return practice.terminal_message()
 
-    def handle_basic_practice_action(self, action: str) -> str:
-        practice = self._practice()
-        if action in {"practice_basic", "practice_basic_refresh"}:
-            return practice.terminal_message()
-        if action == "practice_basic_profile":
-            return practice.profile_message()
-        if action == "practice_basic_wallet":
-            return practice.wallet_message()
-        buy_sizes = {
-            "practice_basic_buy_0_5": 0.5,
-            "practice_basic_buy_1": 1.0,
-            "practice_basic_buy_2_5": 2.5,
-        }
-        if action in buy_sizes:
-            return practice.buy_sol(buy_sizes[action])
-        if action.startswith("practice_basic_sell_"):
-            try:
-                return practice.sell_percent(int(action.rsplit("_", 1)[1]))
-            except ValueError:
-                pass
-        return practice.terminal_message()
-
-    def token_sniffer_prompt(self) -> str:
-        self.ledger.set_state("sniffer_pending_input", "CA")
-        return (
-            "🧪 DEGEN DETECTOR TOKEN SNIFFER\n\n"
-            "Paste a complete Solana token contract address (CA).\n\n"
-            "The bot will check live market data, liquidity, trading activity, holder concentration, "
-            "mint/freeze authority, observed sells and estimated slippage before returning:\n"
-            "🦍 Ape Research | 🟡 Watchlist | 🔴 Reject\n\n"
-            "Send /cancel to stop. Never paste a seed phrase or private key."
-        )
-
-    def handle_sniffer_command(self, text: str):
-        parts = text.strip().split(maxsplit=1)
-        command = parts[0].lower() if parts else ""
-        pending = self.ledger.get_state("sniffer_pending_input", "")
-        if command == "/cancel" and pending:
-            self.ledger.set_state("sniffer_pending_input", "")
-            from .token_sniffer import SnifferResult
-            return SnifferResult("Token Sniffer cancelled.", "")
-        if command == "/sniff":
-            if len(parts) != 2:
-                from .token_sniffer import SnifferResult
-                return SnifferResult(self.token_sniffer_prompt(), "")
-            mint = parts[1].strip()
-        elif pending == "CA" and not command.startswith("/"):
-            mint = text.strip()
-        else:
-            return None
-        from .wallet_tracker import valid_solana_address
-        if not valid_solana_address(mint):
-            from .token_sniffer import SnifferResult
-            return SnifferResult(
-                "That does not look like a valid Solana contract address. Paste the complete CA or send /cancel.",
-                "",
-            )
-        self.ledger.set_state("sniffer_pending_input", "")
-        from .token_sniffer import sniff_token
-        return sniff_token(self.settings, mint)
-
     def handle_practice_command(self, text: str) -> Optional[str]:
         parts = text.strip().split(maxsplit=2)
         command = parts[0].lower() if parts else ""
@@ -272,6 +285,36 @@ class BotController:
             self.ledger.set_state("practice_pending_input", "")
             return "Custom paper order cancelled."
         pending = self.ledger.get_state("practice_pending_input", "")
+        if pending.startswith("CA_SEARCH:") and not command.startswith("/"):
+            chain = pending.split(":", 1)[1]
+            address = text.strip()
+            if chain == "solana":
+                from .wallet_tracker import valid_solana_address
+                if not valid_solana_address(address):
+                    return "That is not a valid Solana contract address. Paste the complete CA or send /cancel."
+            elif not (address.startswith("0x") and len(address) == 42 and all(c in "0123456789abcdefABCDEF" for c in address[2:])):
+                return "That is not a valid Robinhood Chain ERC-20 address. It must be 0x followed by 40 hexadecimal characters."
+            self.ledger.set_state("practice_pending_input", "")
+            from .practice_trading import asset_id
+            return self.select_practice_token(asset_id(chain, address))
+        if pending == "STOP_LOSS" and not command.startswith("/"):
+            raw = text.strip().replace("%", "")
+            try:
+                percent = float(raw)
+            except ValueError:
+                return "Enter a number from 1 to 95, 0 to remove, or /cancel."
+            self.ledger.set_state("practice_pending_input", "")
+            return self._practice().set_stop_loss(percent)
+        if pending == "MANUAL_SELL" and not command.startswith("/"):
+            raw = text.strip().replace("%", "")
+            try:
+                percent = int(float(raw))
+            except ValueError:
+                return "Enter a sell percentage from 1 to 100, or /cancel."
+            if percent < 1 or percent > 100:
+                return "Enter a sell percentage from 1 to 100, or /cancel."
+            self.ledger.set_state("practice_pending_input", "")
+            return self._practice().sell_percent(percent)
         if pending == "CUSTOM_BUY" and not command.startswith("/"):
             return self._handle_custom_buy_text(text)
         if command == "/buy":
@@ -295,10 +338,36 @@ class BotController:
             return self._practice().top_gains_message()
         return None
 
+    def ca_search_message(self, chain: str) -> str:
+        self.ledger.set_state("practice_pending_input", f"CA_SEARCH:{chain}")
+        example = "a Solana base58 address" if chain == "solana" else "an EVM address beginning 0x"
+        return (
+            f"🔍 SEARCH {chain.upper()} CONTRACT ADDRESS\n\n"
+            f"Paste the complete token CA ({example}) in your next message.\n\n"
+            "The bot will verify the address, find its strongest live DEX pair and open it in the "
+            "Practice terminal. No purchase happens automatically. Send /cancel to stop."
+        )
+
+    def real_trade_message(self) -> tuple[str, str]:
+        mint = self._practice().selected_mint
+        if not mint:
+            return "Search a CA or select a scan result before opening real trade mode.", ""
+        symbol = self._practice().selected_symbol or mint[:6]
+        chain, address = self._practice().selected_chain, self._practice().selected_address
+        venue = "Uniswap on Robinhood Chain" if chain == "robinhood" else "Jupiter on Solana"
+        return (
+            "🔐 OWNER REAL TRADE — WALLET APPROVAL REQUIRED\n\n"
+            f"Selected: {symbol}\nNetwork: {chain.title()}\nCA: {address}\nVenue: {venue}\n\n"
+            "Buy and Sell open the self-custodial trading interface with this CA selected. Review the "
+            "token, quote, price impact, slippage and destination before approving in your wallet.\n\n"
+            "Degen Detector does not store a private key and cannot approve the transaction for you.",
+            address,
+        )
+
     def _handle_custom_buy_text(self, text: str) -> str:
         raw = text.strip().upper().replace(",", "")
         is_usd = raw.startswith("$") or raw.endswith(" USD")
-        number = raw.removeprefix("$").removesuffix(" USD").removesuffix(" SOL").strip()
+        number = raw.removeprefix("$").removesuffix(" USD").removesuffix(" SOL").removesuffix(" ETH").strip()
         try:
             amount = float(number)
         except ValueError:
@@ -342,22 +411,6 @@ class BotController:
                 return "🚨 Leaderboard blocked: Emergency Stop is enabled."
             from .live_data import build_hot_leaderboard
             return build_hot_leaderboard(self.settings)
-        if action == "observation_mode":
-            self.ledger.set_state("research_mode", "OBSERVATION")
-            return (
-                "🛰 OBSERVATION MODE ENABLED\n"
-                "The six-agent system will investigate and learn without creating automatic simulated entries. "
-                "Manual Practice Trade remains available."
-            )
-        if action == "paper_research_mode":
-            self.ledger.set_state("research_mode", "PAPER")
-            return (
-                "🧪 PAPER RESEARCH MODE ENABLED\n"
-                "Qualified calls will be stored as paper research observations for outcome tracking. "
-                "No blockchain transaction or wallet signing is possible."
-            )
-        if action == "learning_vault":
-            return self.learning_vault_message()
         if action == "manual_on":
             until = datetime.now(timezone.utc) + timedelta(minutes=self.settings.manual_session_minutes)
             self.ledger.set_state("mode", "MANUAL")
@@ -374,30 +427,6 @@ class BotController:
         self.ledger.set_state("mode", "EMERGENCY_STOP" if action == "emergency_stop" else "OFF")
         self.ledger.set_state("manual_until", "")
         return "🚨 Emergency stop enabled. All scanning is blocked." if action == "emergency_stop" else "⏹️ Scanning stopped."
-
-    def learning_vault_message(self) -> str:
-        stats = self.ledger.learning_vault_stats()
-        evaluated = stats["evaluated"]
-        win_rate = (stats["winners"] / evaluated * 100) if evaluated else 0.0
-        lines = [
-            "🧠 STAGE 15 SHARED LEARNING VAULT",
-            "All specialist agents and the Commander learn from this outcome ledger.",
-            "",
-            f"Observations stored: {stats['total']}",
-            f"Later-price outcomes: {evaluated}",
-            f"Positive outcomes: {stats['winners']} ({win_rate:.1f}%)",
-            f"Average observed return: {stats['average_return_pct']:+.2f}%",
-        ]
-        if stats["best"]:
-            lines.append("\nTOP OBSERVED OUTCOMES")
-            lines.extend(
-                f"{index}. {symbol}: {return_pct:+.2f}%"
-                for index, (symbol, return_pct) in enumerate(stats["best"], start=1)
-            )
-        else:
-            lines.append("\nOutcomes appear after a token is observed again at a later price.")
-        lines.append("\nPaper/observation data only. Funded-wallet execution is disabled.")
-        return "\n".join(lines)
 
     def set_preference(self, action: str) -> str:
         parts = action.split("_")
@@ -552,6 +581,15 @@ class BotController:
         except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             return
 
+    def maybe_check_practice_stops(self, now: Optional[datetime] = None) -> None:
+        now = now or datetime.now(timezone.utc)
+        due_text = self.ledger.get_state("next_practice_stop_check", "")
+        if due_text and now < datetime.fromisoformat(due_text):
+            return
+        self.ledger.set_state("next_practice_stop_check", (now + timedelta(seconds=30)).isoformat())
+        for message in self._practice().check_stop_losses():
+            send_telegram(self.settings.telegram_token, self.settings.telegram_chat_id, message)
+
     def _inside_peak_window(self, now: datetime) -> bool:
         settings = self.automatic_settings()
         try:
@@ -608,7 +646,8 @@ def run_control_bot(settings: Settings) -> None:
             send_tester_menu(settings.telegram_token, chat_id, active.tester_status_message())
 
     delete_webhook(settings.telegram_token)
-    send_control_menu(settings.telegram_token, access.owner_id, "Degen Detector controls are online.")
+    set_bot_commands(settings.telegram_token)
+    send_control_menu(settings.telegram_token, access.owner_id, controller.status_message())
     offset: Optional[int] = None
     while True:
         for update in get_updates(settings.telegram_token, offset, settings.telegram_poll_seconds):
@@ -627,13 +666,57 @@ def run_control_bot(settings: Settings) -> None:
                 action = callback.get("data", "")
                 active = controller if role == "owner" else tester_controller(chat_id)
                 owner_only = {
-                    "settings", "manual_on", "stop", "automatic", "emergency_stop",
-                    "observation_mode", "paper_research_mode",
+                    "settings", "admin_hub", "manual_on", "stop", "automatic_ask", "automatic_confirm",
+                    "emergency_ask", "emergency_confirm", "real_trade",
                 }
                 if role != "owner" and (
                     action in owner_only or action.startswith(("interval_", "window_", "score_", "cooldown_"))
                 ):
                     send_tester_menu(settings.telegram_token, chat_id, "🔒 Owner-only control.")
+                elif action == "ca_search":
+                    send_ca_chain_menu(settings.telegram_token, chat_id,
+                        "🔍 CHOOSE A NETWORK\n\nSolana uses base58 CAs. Robinhood Chain uses EVM 0x addresses and ETH for gas.")
+                elif action in {"ca_chain_solana", "ca_chain_robinhood"}:
+                    chain = action.removeprefix("ca_chain_")
+                    send_practice_menu(settings.telegram_token, chat_id, active.ca_search_message(chain))
+                elif action == "real_trade":
+                    message_text, mint = active.real_trade_message()
+                    if mint:
+                        send_real_trade_menu(settings.telegram_token, chat_id, message_text, mint, active._practice().selected_chain)
+                    else:
+                        send_admin_menu(settings.telegram_token, chat_id, message_text)
+                elif action == "scan_hub":
+                    send_scan_hub(settings.telegram_token, chat_id, active.scan_hub_message())
+                elif action == "robinhood_scan":
+                    from .live_data import build_robinhood_meme_report
+                    send_scan_hub(settings.telegram_token, chat_id, build_robinhood_meme_report(active.settings))
+                elif action == "discover_hub":
+                    send_discover_menu(settings.telegram_token, chat_id, active.discover_message())
+                elif action == "early_mooners":
+                    from .live_data import build_early_mooner_report
+                    send_discover_menu(settings.telegram_token, chat_id, build_early_mooner_report(active.settings))
+                elif action == "learn_hub":
+                    send_learn_menu(settings.telegram_token, chat_id, active.learn_message())
+                elif action == "score_guide":
+                    send_learn_menu(settings.telegram_token, chat_id, active.score_guide_message())
+                elif action == "safety_guide":
+                    send_learn_menu(settings.telegram_token, chat_id, active.safety_guide_message())
+                elif action == "practice_guide":
+                    send_learn_menu(settings.telegram_token, chat_id, active.practice_guide_message())
+                elif action == "admin_hub":
+                    send_admin_menu(settings.telegram_token, chat_id, active.admin_message())
+                elif action == "automatic_ask":
+                    send_admin_menu(settings.telegram_token, chat_id,
+                        "🕒 ENABLE AUTOMATIC SCANNING?\n\nThe bot will scan on schedule using your current settings. "
+                        "This remains research and paper-only.", "automatic")
+                elif action == "emergency_ask":
+                    send_admin_menu(settings.telegram_token, chat_id,
+                        "🚨 ENABLE EMERGENCY STOP?\n\nThis immediately blocks manual scans, automatic scans and wallet checks.",
+                        "emergency")
+                elif action == "automatic_confirm":
+                    send_admin_menu(settings.telegram_token, chat_id, active.handle("automatic"))
+                elif action == "emergency_confirm":
+                    send_admin_menu(settings.telegram_token, chat_id, active.handle("emergency_stop"))
                 elif action == "settings":
                     send_settings_menu(settings.telegram_token, chat_id, active.settings_message())
                 elif action == "wallet_tracker":
@@ -646,34 +729,12 @@ def run_control_bot(settings: Settings) -> None:
                     send_wallet_menu(settings.telegram_token, chat_id, active.check_wallet_signals())
                 elif action == "paper_copy":
                     send_paper_copy_menu(settings.telegram_token, chat_id, active.paper_copy_message())
-                elif action == "token_sniffer":
-                    send_token_sniffer_menu(
-                        settings.telegram_token, chat_id, active.token_sniffer_prompt()
-                    )
-                elif action == "token_sniffer_cancel":
-                    active.ledger.set_state("sniffer_pending_input", "")
-                    send_practice_hub(
-                        settings.telegram_token, chat_id, active.practice_hub_message()
-                    )
                 elif action.startswith("practice_select:"):
                     mint = action.split(":", 1)[1]
-                    send_basic_practice_menu(
+                    send_practice_menu(
                         settings.telegram_token, chat_id, active.select_practice_token(mint), active.practice_chart()
                     )
-                elif action == "practice_dashboard":
-                    send_practice_hub(
-                        settings.telegram_token, chat_id, active.practice_hub_message()
-                    )
-                elif action == "practice_basic" or action.startswith("practice_basic_"):
-                    send_basic_practice_menu(
-                        settings.telegram_token, chat_id,
-                        active.handle_basic_practice_action(action), active.practice_chart(),
-                    )
-                elif action == "practice_advanced":
-                    send_practice_menu(
-                        settings.telegram_token, chat_id, active.practice_message(), active.practice_chart()
-                    )
-                elif action.startswith("practice_"):
+                elif action == "practice_dashboard" or action.startswith("practice_"):
                     send_practice_menu(
                         settings.telegram_token, chat_id, active.handle_practice_action(action), active.practice_chart()
                     )
@@ -733,25 +794,13 @@ def run_control_bot(settings: Settings) -> None:
                         )
                     continue
                 active = controller if role == "owner" else tester_controller(chat_id)
-                sniffer_reply = active.handle_sniffer_command(text)
-                practice_reply = active.handle_practice_command(text) if sniffer_reply is None else None
-                wallet_reply = (
-                    active.handle_wallet_command(text)
-                    if sniffer_reply is None and practice_reply is None else None
-                )
+                practice_reply = active.handle_practice_command(text)
+                wallet_reply = active.handle_wallet_command(text) if practice_reply is None else None
                 setting_reply = (
                     active.handle_text_setting(text)
-                    if role == "owner" and sniffer_reply is None and practice_reply is None and wallet_reply is None else None
+                    if role == "owner" and practice_reply is None and wallet_reply is None else None
                 )
-                if sniffer_reply:
-                    if sniffer_reply.mint:
-                        send_research_result(
-                            settings.telegram_token, chat_id, sniffer_reply.message,
-                            sniffer_reply.mint, sniffer_reply.chart_url,
-                        )
-                    else:
-                        send_token_sniffer_menu(settings.telegram_token, chat_id, sniffer_reply.message)
-                elif practice_reply:
+                if practice_reply:
                     send_practice_menu(
                         settings.telegram_token, chat_id, practice_reply, active.practice_chart()
                     )
@@ -761,6 +810,10 @@ def run_control_bot(settings: Settings) -> None:
                     send_settings_menu(settings.telegram_token, chat_id, setting_reply)
                 elif text.lower() in {"/start", "/menu", "/status"}:
                     send_main_menu(chat_id, role, active)
+                elif text.lower() == "/scan":
+                    send_scan_hub(settings.telegram_token, chat_id, active.handle_tester_scan() if role == "tester" else active.handle("scan_once"))
+                elif text.lower() == "/learn":
+                    send_learn_menu(settings.telegram_token, chat_id, active.learn_message())
                 elif text.lower() in {"/help", "/instructions"}:
                     if role == "owner":
                         send_control_menu(settings.telegram_token, chat_id, active.help_message())
@@ -768,5 +821,7 @@ def run_control_bot(settings: Settings) -> None:
                         send_tester_menu(settings.telegram_token, chat_id, active.help_message())
         controller.maybe_run_automatic()
         controller.maybe_check_wallets()
+        controller.maybe_check_practice_stops()
         for active in tester_controllers.values():
             active.maybe_check_wallets()
+            active.maybe_check_practice_stops()

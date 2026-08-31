@@ -27,11 +27,7 @@ class TokenSnapshot:
     social_data_available: bool = True
     chart_url: str = ""
     dex_id: str = ""
-    developer_wallet: str = ""
-    developer_trace_confidence: str = "unavailable"
-    developer_activity_count: int = 0
-    social_links_count: int = 0
-    website_links_count: int = 0
+    holder_count: int = 0
     observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

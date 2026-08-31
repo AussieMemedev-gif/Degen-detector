@@ -30,8 +30,24 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Stage 12.1 top-ten investigated results with green/amber/red classifications and rejection breakdowns
 - Stage 13 per-user Practice Trade terminal with live-priced fake-money orders, rolling hourly buying power, realistic fee/slippage modelling, isolated wallets, history, all-time P&L and top gains
 - Stage 13.2 one-tap Trade with Fake Money buttons on every individual research result and private automatic owner alert
-- Stage 14 organized Practice Trading hub with Basic and Advanced dashboards, user-submitted Token Sniffer screening, and refreshable live market cap/liquidity/price/P&L statistics
-- Stage 15 GrokStreet-inspired six-agent research with best-effort developer launch-wallet tracing, verifiable narrative-link research, Commander veto, Observation/Paper Research modes, and a shared outcome-learning vault
+- Stage 15 beginner-first Telegram dashboard with Scan, Discover, Practice, Trackers and Learn journeys
+- Short native Telegram command menu, consistent Home/Back navigation and plain-English traffic-light guidance
+- Owner automation and emergency controls separated into an Admin area with confirmation screens
+- Stage 15.1 CA search with practice-first quick/manual buy and sell controls
+- Adjustable monitored practice stop losses and owner-only wallet-approved Jupiter trade routes
+- Early Mooner Radar using holder count/distribution, age, liquidity, volume acceleration and buy pressure
+- Stage 15.2 Solana + Robinhood Chain network selection, dual-format CA search and chain-aware practice sizing
+- Robinhood Chain early market radar (chain 4663) plus owner-only Uniswap wallet-approved trade routes
+
+## Stage 15 beginner dashboard
+
+The home screen is intentionally short. **Scan for Tokens** is the recommended starting point.
+**Discover** browses launchpads, **Practice** opens the fake-money terminal, **Trackers** monitors
+public wallets, and **Learn** explains scores and safety. Owner-only scheduling and system controls
+are kept under **Admin**, away from tester accounts and normal research flows.
+
+The bot registers only five Telegram commands: `/start`, `/scan`, `/learn`, `/status`, and `/help`.
+All other features remain available through buttons, so beginners do not need to memorize commands.
 
 ## Quick start
 
@@ -55,14 +71,6 @@ Open **Practice Trade** for the manual training terminal. Every user starts with
 
 Every individual Research Scan result includes **Trade with Fake Money**, **Live Chart**, and **My Practice Profile** controls. The trade button binds the exact scanned mint to the requesting user's isolated practice terminal. Automatic alerts receive the same controls in the owner's private chat; group alerts remain read-only so another group member cannot operate somebody else's practice profile.
 
-Open **Token Sniffer** or use `/sniff TOKEN_MINT` to investigate a user-submitted Solana contract address. Complete reports classify the token as Ape Research, Watchlist or Reject using the existing Commander score and hard vetoes. Missing pair or on-chain verification data is labelled Reject/Unverified rather than guessed. The associated Trade with Fake Money button is still simulation-only.
-
-Stage 15 adds **Developer Wallet** and **Narrative Research** specialists to the existing Social, On-Chain, Chart and Risk agents. Developer tracing is best-effort and reports its confidence; it never invents a wallet identity. Narrative research scores only verifiable links exposed by current DEX metadata and explicitly labels external sentiment as unavailable until an approved social-data feed is connected. The Commander combines all six reports while preserving every hard Risk veto.
-
-Use **Observation Mode** to investigate and populate the learning vault without automatic simulated-entry claims. Use **Paper Research Mode** to label new observations for paper evaluation. The **Learning Vault** evaluates an earlier observation only when that mint is seen again at a later price, then reports its observed return, win rate and strongest outcomes. These modes never enable funded-wallet execution.
-
-The **Basic Trading** dashboard keeps only the most common profile, wallet, live refresh, quick-buy, quick-sell and chart controls. **Advanced Trading** adds custom SOL/USD buys, Paper Snipe, complete history, all-time P&L, Top 10 gains and Instant Paper Sell. Telegram's **Refresh Live Stats** updates price, market cap/FDV, liquidity, estimated position value and P&L together. Continuously animated charting remains an external live-chart link because Telegram messages are not streaming chart canvases.
-
 Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
 
 Open **Launchpads / PF** from the main Telegram menu to filter current Solana discoveries by source. `Qualified 75+` uses `LAUNCHPAD_MIN_SCORE` (default 75). The initial sniper and bundle percentages are conservative screening heuristics with low confidence; they are not forensic proof. Developer lore/history is shown as unknown until creator-wallet attribution can be verified.
@@ -73,8 +81,8 @@ A candidate is rejected if liquidity is below the configured floor, holder conce
 
 ## Next integrations
 
-1. Approved X and Reddit adapters for content-level narrative sentiment.
-2. Deeper paginated creator-wallet history and verified developer identity attribution.
-3. Helius webhook delivery for lower-latency token and wallet events.
-4. Historical replay and time-horizon outcome evaluation.
-5. Owner-only micro-trading remains deferred until a separate audited release.
+1. Helius webhook/RPC adapter for token and wallet events.
+2. DEX market-data adapter for liquidity, volume, price, and pool age.
+3. X and Reddit adapters within approved API terms.
+4. Railway peak-time scheduled jobs.
+5. Historical replay and forward paper-trading evaluation.

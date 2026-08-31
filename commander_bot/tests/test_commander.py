@@ -3,21 +3,18 @@ import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
 from unittest.mock import patch
-from commander_bot.agents import (
-    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
-    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
-)
+from commander_bot.agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
 from commander_bot.commander import ChiefCommander
 from commander_bot.config import Settings
 from commander_bot.main import demo_candidate
 from commander_bot.storage import Ledger
 from commander_bot.control import BotController
 from commander_bot.live_data import (
-    format_hot_leaderboard, format_scan_summary, hot_score, investigated_scan_results,
+    early_mooner_score, format_hot_leaderboard, format_scan_summary, hot_score, investigated_scan_results,
     research_class, snapshot_from_pair, visible_scan_results,
 )
 from commander_bot.notifications import (
-    basic_practice_keyboard, format_live_alert, practice_hub_keyboard, practice_keyboard,
+    ca_chain_keyboard, control_keyboard, format_live_alert, practice_keyboard, real_trade_keyboard,
     research_result_keyboard, telegram_request,
 )
 from commander_bot.wallet_tracker import transaction_movements, valid_solana_address
@@ -25,8 +22,7 @@ from commander_bot.paper_copy import portfolio_message, process_wallet_events, t
 from commander_bot.launchpad_hub import identify_launchpad, _bundle_estimate, _sniper_estimate
 from commander_bot.access import TelegramAccess, parse_telegram_ids, user_database_path
 from commander_bot.notifications import tester_keyboard
-from commander_bot.practice_trading import PracticeTrading
-from commander_bot.token_sniffer import sniff_token
+from commander_bot.practice_trading import PracticeTrading, asset_id, split_asset
 
 
 class CommanderTests(unittest.TestCase):
@@ -392,24 +388,6 @@ class CommanderTests(unittest.TestCase):
         self.assertEqual(callback, f"practice_select:{mint}")
         self.assertLessEqual(len(callback.encode()), 64)
 
-    def test_practice_hub_separates_basic_advanced_and_sniffer(self):
-        hub_actions = {
-            button.get("callback_data")
-            for row in practice_hub_keyboard()["inline_keyboard"] for button in row
-        }
-        self.assertIn("practice_basic", hub_actions)
-        self.assertIn("practice_advanced", hub_actions)
-        self.assertIn("token_sniffer", hub_actions)
-        basic_actions = {
-            button.get("callback_data")
-            for row in basic_practice_keyboard("https://dexscreener.com/solana/demo")["inline_keyboard"]
-            for button in row if button.get("callback_data")
-        }
-        self.assertIn("practice_basic_buy_0_5", basic_actions)
-        self.assertIn("practice_basic_sell_100", basic_actions)
-        self.assertNotIn("practice_manual_buy", basic_actions)
-        self.assertIn("practice_advanced", basic_actions)
-
     def test_practice_default_hourly_limit_is_two_thousand(self):
         self.assertEqual(Settings().practice_hourly_buy_limit_usd, 2_000)
 
@@ -457,58 +435,6 @@ class CommanderTests(unittest.TestCase):
             "https://dexscreener.com/solana/meme",
         )
 
-    def test_live_terminal_displays_market_cap_liquidity_and_pnl(self):
-        settings = Settings(database_path=":memory:")
-        ledger = Ledger(":memory:")
-        practice = PracticeTrading(settings, ledger)
-        ledger.set_state("practice_selected_mint", "demo-mint")
-        ledger.set_state("practice_selected_symbol", "MEME")
-        practice.buy_sol(1, token_price=1, sol_price=100)
-        market = {
-            "symbol": "MEME", "price": 2.0, "market_cap": 1_250_000.0,
-            "liquidity": 80_000.0, "chart": "https://dexscreener.com/solana/meme",
-        }
-        with patch("commander_bot.practice_trading.live_market_profile", return_value=market), patch(
-            "commander_bot.practice_trading.live_price", return_value=125.0,
-        ):
-            message = practice.terminal_message()
-        self.assertIn("Market cap/FDV: $1,250,000.00", message)
-        self.assertIn("Liquidity: $80,000.00", message)
-        self.assertIn("Unrealized P&L", message)
-
-    def test_token_sniffer_returns_ape_watchlist_or_reject_research(self):
-        mint = "11111111111111111111111111111111"
-        pair = {
-            "chainId": "solana", "baseToken": {"symbol": "SNIFF", "address": mint},
-            "priceUsd": "0.01", "marketCap": 1_000_000,
-            "liquidity": {"usd": 100_000}, "volume": {"m5": 50_000, "h1": 100_000},
-            "txns": {"m5": {"buys": 100, "sells": 40}},
-            "priceChange": {"m5": 8, "h1": 25}, "pairCreatedAt": 1_700_000_000_000,
-            "url": "https://dexscreener.com/solana/sniff", "dexId": "raydium",
-        }
-        risk = {
-            "top10_holder_pct": 15, "mint_authority_active": False,
-            "freeze_authority_active": False,
-        }
-        settings = Settings(database_path=":memory:", scan_qualified_score=75)
-        with patch("commander_bot.token_sniffer.best_pair", return_value=pair), patch(
-            "commander_bot.token_sniffer.onchain_risk", return_value=risk,
-        ):
-            result = sniff_token(settings, mint)
-        self.assertIn("APE RESEARCH", result.message)
-        self.assertIn("Degen score:", result.message)
-        self.assertIn("Market cap/FDV: $1,000,000.00", result.message)
-        self.assertEqual(result.mint, mint)
-
-    def test_token_sniffer_rejects_invalid_or_unverified_ca(self):
-        controller = BotController(Settings(database_path=":memory:"))
-        controller.token_sniffer_prompt()
-        result = controller.handle_sniffer_command("not-a-solana-ca")
-        self.assertIn("valid Solana contract", result.message)
-        with patch("commander_bot.token_sniffer.best_pair", side_effect=ValueError("missing")):
-            result = sniff_token(controller.settings, "11111111111111111111111111111111")
-        self.assertIn("REJECT / UNVERIFIED", result.message)
-
     def test_practice_accounts_are_isolated_per_user_database(self):
         with tempfile.TemporaryDirectory() as directory:
             first_path = f"{directory}/user-1.db"
@@ -527,45 +453,51 @@ class CommanderTests(unittest.TestCase):
             self.assertLess(first.practice_cash(), second.practice_cash())
             self.assertEqual(second.practice_positions(), [])
 
-    def test_stage15_six_agent_commander_includes_developer_and_narrative(self):
-        token = replace(
-            demo_candidate(), developer_wallet="11111111111111111111111111111111",
-            developer_trace_confidence="medium", developer_activity_count=12,
-            social_links_count=2, website_links_count=1,
-        )
-        agents = [
-            SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(self.settings),
-            DeveloperWalletAgent(), NarrativeResearchAgent(),
-        ]
-        decision = ChiefCommander(agents, self.settings).decide(token)
-        self.assertEqual(set(decision.reports), {"social", "onchain", "chart", "risk", "developer", "narrative"})
-        self.assertIn("developer:", " ".join(decision.reasons))
+    def test_ca_search_and_real_trade_controls_are_present(self):
+        home_actions = {
+            button.get("callback_data")
+            for row in control_keyboard()["inline_keyboard"] for button in row
+        }
+        self.assertIn("ca_search", home_actions)
+        real = real_trade_keyboard("DemoMint")
+        urls = [button.get("url", "") for row in real["inline_keyboard"] for button in row]
+        self.assertTrue(any("jup.ag/swap/SOL-DemoMint" in url for url in urls))
 
-    def test_stage15_learning_vault_evaluates_repeat_observations(self):
+    def test_adjustable_practice_stop_loss_triggers_full_sell(self):
         ledger = Ledger(":memory:")
-        first = replace(demo_candidate(), price_usd=1.0)
-        second = replace(demo_candidate(), price_usd=1.5)
-        decision = self.commander.decide(first)
-        ledger.record_learning_observation(first, decision, "OBSERVATION")
-        ledger.record_learning_observation(second, decision, "PAPER")
-        stats = ledger.learning_vault_stats()
-        self.assertEqual(stats["total"], 2)
-        self.assertEqual(stats["evaluated"], 1)
-        self.assertAlmostEqual(stats["average_return_pct"], 50.0)
+        terminal = PracticeTrading(self.settings, ledger)
+        ledger.set_state("practice_selected_mint", "demo-mint")
+        ledger.set_state("practice_selected_symbol", "DEMO")
+        terminal.buy_sol(1, token_price=1, sol_price=100)
+        self.assertIn("set to -10%", terminal.set_stop_loss(10))
+        messages = terminal.check_stop_losses(lambda _: 0.80)
+        self.assertEqual(len(messages), 1)
+        self.assertIsNone(ledger.practice_position("demo-mint"))
 
-    def test_stage15_research_modes_never_enable_live_execution(self):
-        controller = BotController(Settings(database_path=":memory:"))
-        self.assertIn("OBSERVATION MODE", controller.handle("observation_mode"))
-        self.assertEqual(controller.ledger.get_state("research_mode"), "OBSERVATION")
-        self.assertIn("PAPER RESEARCH MODE", controller.handle("paper_research_mode"))
-        self.assertEqual(controller.ledger.get_state("research_mode"), "PAPER")
-        self.assertIn("Wallet access: DISABLED", controller.status_message())
+    def test_early_mooner_score_rewards_young_distributed_momentum(self):
+        token = replace(
+            demo_candidate(), pool_age_minutes=120, liquidity_usd=80_000,
+            buy_sell_ratio=2.0, top10_holder_pct=20, holder_count=600,
+            volume_change_pct=150,
+        )
+        decision = self.commander.decide(token)
+        self.assertGreaterEqual(early_mooner_score(token, decision), 45)
 
-    def test_stage15_learning_vault_dashboard_is_truthfully_empty_at_start(self):
-        controller = BotController(Settings(database_path=":memory:"))
-        message = controller.handle("learning_vault")
-        self.assertIn("Observations stored: 0", message)
-        self.assertIn("Funded-wallet execution is disabled", message)
+    def test_dual_chain_ca_selector_and_asset_ids(self):
+        actions = {
+            button.get("callback_data")
+            for row in ca_chain_keyboard()["inline_keyboard"] for button in row
+        }
+        self.assertIn("ca_chain_solana", actions)
+        self.assertIn("ca_chain_robinhood", actions)
+        encoded = asset_id("robinhood", "0xABCDEF0000000000000000000000000000000000")
+        self.assertEqual(split_asset(encoded)[0], "robinhood")
+        self.assertTrue(split_asset(encoded)[1].startswith("0x"))
+
+    def test_robinhood_real_trade_routes_use_uniswap(self):
+        keyboard = real_trade_keyboard("0xabcdef0000000000000000000000000000000000", "robinhood")
+        urls = [button.get("url", "") for row in keyboard["inline_keyboard"] for button in row]
+        self.assertTrue(any("app.uniswap.org" in url and "outputCurrency" in url for url in urls))
 
 
 if __name__ == "__main__":

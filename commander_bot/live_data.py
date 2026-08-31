@@ -5,10 +5,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List
 
-from .agents import (
-    ChartTraderAgent, DeveloperWalletAgent, NarrativeResearchAgent,
-    OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent,
-)
+from .agents import ChartTraderAgent, OnChainScoutAgent, RiskSecurityAgent, SocialAlphaAgent
 from .commander import ChiefCommander
 from .config import Settings
 from .models import CommanderDecision, TokenSnapshot
@@ -17,7 +14,7 @@ from .storage import Ledger
 
 
 DEX_PROFILES_URL = "https://api.dexscreener.com/token-profiles/latest/v1"
-DEX_PAIRS_URL = "https://api.dexscreener.com/token-pairs/v1/solana/{}"
+DEX_PAIRS_URL = "https://api.dexscreener.com/token-pairs/v1/{}/{}"
 
 
 def _get_json(url: str, timeout: int = 15) -> Any:
@@ -37,13 +34,13 @@ def _post_json(url: str, payload: Dict[str, Any], timeout: int = 15) -> Dict[str
         return json.loads(response.read())
 
 
-def discover_mints(limit: int) -> List[str]:
+def discover_mints(limit: int, chain: str = "solana") -> List[str]:
     profiles = _get_json(DEX_PROFILES_URL)
     seen: set[str] = set()
     result: List[str] = []
     for profile in profiles if isinstance(profiles, list) else []:
         mint = str(profile.get("tokenAddress", ""))
-        if profile.get("chainId") == "solana" and mint and mint not in seen:
+        if profile.get("chainId") == chain and mint and mint not in seen:
             seen.add(mint)
             result.append(mint)
             if len(result) >= limit:
@@ -51,20 +48,62 @@ def discover_mints(limit: int) -> List[str]:
     return result
 
 
+def build_robinhood_meme_report(settings: Settings) -> str:
+    """Market-first Robinhood Chain radar; contract risk is explicitly not inferred."""
+    if not settings.live_data_enabled:
+        return "🟩 Robinhood Radar unavailable: live data is disabled."
+    rows: list[tuple[float, Dict[str, Any]]] = []
+    for address in discover_mints(settings.live_candidate_limit, "robinhood"):
+        try:
+            pair = best_pair(f"robinhood:{address}")
+            liquidity = float((pair.get("liquidity") or {}).get("usd") or 0)
+            volume = float((pair.get("volume") or {}).get("h1") or 0)
+            txns = (pair.get("txns") or {}).get("h1") or {}
+            buys, sells = int(txns.get("buys") or 0), int(txns.get("sells") or 0)
+            created = int(pair.get("pairCreatedAt") or int(time.time() * 1000))
+            age = max(0, int((time.time() * 1000 - created) / 60_000))
+            if liquidity < 10_000 or sells == 0 or age > 2_880:
+                continue
+            ratio = buys / max(sells, 1)
+            score = min(100, 25 + min(volume / 2_000, 25) + min(ratio * 8, 20)
+                        + (15 if age <= 360 else 8) + min(liquidity / 10_000, 15))
+            rows.append((score, pair))
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            continue
+    rows.sort(key=lambda item: item[0], reverse=True)
+    if not rows:
+        return "🟩 ROBINHOOD CHAIN EARLY RADAR\n\nNo indexed tokens currently pass the minimum market-integrity filters."
+    lines = ["🟩 ROBINHOOD CHAIN EARLY RADAR", "Chain 4663 • ETH gas • Market-first screening", ""]
+    for index, (score, pair) in enumerate(rows[:max(1, min(10, settings.scan_result_limit))], 1):
+        base, txns = pair.get("baseToken") or {}, ((pair.get("txns") or {}).get("h1") or {})
+        lines.extend([
+            f"{index}. {base.get('symbol') or 'UNKNOWN'} — {score:.1f}/100 market score",
+            f"Liquidity ${float((pair.get('liquidity') or {}).get('usd') or 0):,.0f} | 1h volume ${float((pair.get('volume') or {}).get('h1') or 0):,.0f}",
+            f"1h buys {int(txns.get('buys') or 0)} | sells {int(txns.get('sells') or 0)}",
+            f"CA: {base.get('address') or ''}", f"Chart: {pair.get('url') or ''}", "",
+        ])
+    lines.append("⚠️ Robinhood results require separate contract verification. Market activity alone does not prove safety.")
+    return "\n".join(lines)
+
+
 def best_pair(mint: str) -> Dict[str, Any]:
-    pairs = _get_json(DEX_PAIRS_URL.format(urllib.parse.quote(mint)))
-    solana_pairs = [pair for pair in pairs if pair.get("chainId") == "solana"] if isinstance(pairs, list) else []
+    if ":" in mint:
+        chain, address = mint.split(":", 1)
+    else:
+        chain, address = "solana", mint
+    pairs = _get_json(DEX_PAIRS_URL.format(chain, urllib.parse.quote(address)))
+    solana_pairs = [pair for pair in pairs if pair.get("chainId") == chain] if isinstance(pairs, list) else []
     if not solana_pairs:
-        raise ValueError("no active Solana pair")
+        raise ValueError(f"no active {chain} pair")
     base_pairs = [
         pair for pair in solana_pairs
-        if str((pair.get("baseToken") or {}).get("address") or "") == mint
+        if str((pair.get("baseToken") or {}).get("address") or "").lower() == address.lower()
     ]
     candidates = base_pairs or solana_pairs
     return max(candidates, key=lambda pair: float((pair.get("liquidity") or {}).get("usd") or 0))
 
 
-def helius_rpc(api_key: str, method: str, params: List[Any]) -> Any:
+def helius_rpc(api_key: str, method: str, params: Any) -> Dict[str, Any]:
     if not api_key:
         raise ValueError("HELIUS_API_KEY is required for live scans")
     url = "https://mainnet.helius-rpc.com/?api-key=" + urllib.parse.quote(api_key)
@@ -79,6 +118,13 @@ def onchain_risk(mint: str, api_key: str) -> Dict[str, Any]:
     parsed = (((account.get("value") or {}).get("data") or {}).get("parsed") or {}).get("info") or {}
     supply_result = helius_rpc(api_key, "getTokenSupply", [mint])
     largest_result = helius_rpc(api_key, "getTokenLargestAccounts", [mint])
+    try:
+        token_accounts = helius_rpc(api_key, "getTokenAccounts", {
+            "mint": mint, "limit": 1, "options": {"showZeroBalance": False},
+        })
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+        # Holder count enriches the mooner score but must not break the core safety scan.
+        token_accounts = {}
     supply = int((supply_result.get("value") or {}).get("amount") or 0)
     largest = largest_result.get("value") or []
     top10_amount = sum(int(item.get("amount") or 0) for item in largest[:10])
@@ -88,32 +134,7 @@ def onchain_risk(mint: str, api_key: str) -> Dict[str, Any]:
         "mint_authority_active": parsed.get("mintAuthority") is not None,
         "freeze_authority_active": parsed.get("freezeAuthority") is not None,
         "top10_holder_pct": (top10_amount / supply) * 100,
-    }
-
-
-def developer_wallet_trace(mint: str, api_key: str) -> Dict[str, Any]:
-    """Best-effort trace to the earliest signer in the available mint-history sample."""
-    signatures = helius_rpc(api_key, "getSignaturesForAddress", [mint, {"limit": 1000}])
-    if not isinstance(signatures, list) or not signatures:
-        return {"wallet": "", "confidence": "unavailable", "activity_count": 0}
-    oldest = signatures[-1]
-    signature = str(oldest.get("signature") or "")
-    if not signature:
-        return {"wallet": "", "confidence": "unavailable", "activity_count": len(signatures)}
-    transaction = helius_rpc(
-        api_key, "getTransaction",
-        [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
-    )
-    keys = (((transaction or {}).get("transaction") or {}).get("message") or {}).get("accountKeys") or []
-    signers = [
-        str(item.get("pubkey") or "") for item in keys
-        if isinstance(item, dict) and item.get("signer") and item.get("pubkey")
-    ]
-    confidence = "medium" if len(signatures) < 1000 and signers else "low"
-    return {
-        "wallet": signers[0] if signers else "",
-        "confidence": confidence if signers else "unavailable",
-        "activity_count": len(signatures),
+        "holder_count": int(token_accounts.get("total") or 0),
     }
 
 
@@ -131,8 +152,6 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
     created_ms = int(pair.get("pairCreatedAt") or int(time.time() * 1000))
     price_change = pair.get("priceChange") or {}
     base = pair.get("baseToken") or {}
-    info = pair.get("info") or {}
-    developer = risk.get("developer") or {}
     return TokenSnapshot(
         mint=mint,
         symbol=str(base.get("symbol") or "UNKNOWN"),
@@ -156,11 +175,7 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
         social_data_available=False,
         chart_url=str(pair.get("url") or ""),
         dex_id=str(pair.get("dexId") or "unknown"),
-        developer_wallet=str(developer.get("wallet") or ""),
-        developer_trace_confidence=str(developer.get("confidence") or "unavailable"),
-        developer_activity_count=int(developer.get("activity_count") or 0),
-        social_links_count=len(info.get("socials") or []),
-        website_links_count=len(info.get("websites") or []),
+        holder_count=int(risk.get("holder_count") or 0),
         observed_at=datetime.now(timezone.utc),
     )
 
@@ -168,10 +183,7 @@ def snapshot_from_pair(mint: str, pair: Dict[str, Any], risk: Dict[str, Any]) ->
 def analyse_candidates_with_diagnostics(
     settings: Settings, mints: Iterable[str]
 ) -> tuple[List[tuple[TokenSnapshot, CommanderDecision]], Dict[str, int]]:
-    agents = [
-        SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings),
-        DeveloperWalletAgent(), NarrativeResearchAgent(),
-    ]
+    agents = [SocialAlphaAgent(), OnChainScoutAgent(), ChartTraderAgent(), RiskSecurityAgent(settings)]
     commander = ChiefCommander(agents, settings)
     results: List[tuple[TokenSnapshot, CommanderDecision]] = []
     diagnostics: Dict[str, int] = {}
@@ -186,11 +198,6 @@ def analyse_candidates_with_diagnostics(
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
             diagnostics["On-chain verification incomplete"] = diagnostics.get("On-chain verification incomplete", 0) + 1
             continue
-        try:
-            risk["developer"] = developer_wallet_trace(mint, settings.helius_api_key)
-        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
-            risk["developer"] = {"wallet": "", "confidence": "unavailable", "activity_count": 0}
-            diagnostics["Developer trace incomplete"] = diagnostics.get("Developer trace incomplete", 0) + 1
         try:
             snapshot = snapshot_from_pair(mint, pair, risk)
             results.append((snapshot, commander.decide(snapshot)))
@@ -258,8 +265,53 @@ def build_hot_leaderboard(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-        ledger.record_learning_observation(snapshot, decision, ledger.get_state("research_mode", "OBSERVATION"))
     return format_hot_leaderboard(results, max(1, min(10, settings.scan_result_limit)))
+
+
+def early_mooner_score(snapshot: TokenSnapshot, decision: CommanderDecision) -> float:
+    """Favor young, liquid, distributed tokens with accelerating organic-looking demand."""
+    if decision.status == "REJECTED" or decision.vetoes:
+        return -1
+    if snapshot.pool_age_minutes > 2_880 or snapshot.liquidity_usd < 20_000:
+        return -1
+    if snapshot.top10_holder_pct > 35 or snapshot.buy_sell_ratio < 1.15:
+        return -1
+    score = decision.score * 0.45
+    score += min(max(snapshot.volume_change_pct, 0) / 10, 15)
+    score += min(max(snapshot.buy_sell_ratio - 1, 0) * 6, 12)
+    score += 10 if snapshot.pool_age_minutes <= 360 else 6 if snapshot.pool_age_minutes <= 1_440 else 2
+    score += 8 if 25_000 <= snapshot.liquidity_usd <= 500_000 else 4
+    score += 7 if snapshot.top10_holder_pct <= 25 else 3
+    score += 8 if snapshot.holder_count >= 500 else 5 if snapshot.holder_count >= 100 else 2
+    if snapshot.price_change_5m_pct > 80 or snapshot.price_change_1h_pct > 250:
+        score -= 15
+    return round(max(0, min(100, score)), 1)
+
+
+def build_early_mooner_report(settings: Settings) -> str:
+    if not settings.live_data_enabled:
+        return "🌙 Early Mooner Radar unavailable: live data is disabled."
+    results = analyse_candidates(settings, discover_mints(settings.live_candidate_limit))
+    ranked = sorted(
+        ((early_mooner_score(snapshot, decision), snapshot, decision) for snapshot, decision in results),
+        key=lambda item: item[0], reverse=True,
+    )
+    ranked = [item for item in ranked if item[0] >= 45][:max(1, min(10, settings.scan_result_limit))]
+    if not ranked:
+        return "🌙 EARLY MOONER RADAR\n\nNo early tokens currently pass the momentum, holder-distribution and safety gates."
+    lines = ["🌙 EARLY MOONER RADAR", "Early momentum + holder distribution + safety", ""]
+    for index, (score, token, decision) in enumerate(ranked, 1):
+        lines.extend([
+            f"{index}. {token.symbol} — {score:.1f}/100",
+            f"Age {token.pool_age_minutes}m | Liquidity ${token.liquidity_usd:,.0f} | 5m volume ${token.volume_5m_usd:,.0f}",
+            f"Buy/Sell {token.buy_sell_ratio:.2f} | Holders {token.holder_count:,} | Top 10 {token.top10_holder_pct:.1f}%",
+            f"Commander {decision.score:.1f} | Volume acceleration {token.volume_change_pct:+.0f}%",
+            f"Mint: {token.mint}",
+            f"Chart: {token.chart_url}" if token.chart_url else "",
+            "",
+        ])
+    lines.append("⚠️ Early tokens remain extremely high risk. Social/community feeds are not yet verified.")
+    return "\n".join(lines)
 
 
 def visible_scan_results(
@@ -346,10 +398,8 @@ def run_live_scan(settings: Settings) -> str:
         send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
         return message
     ledger = Ledger(settings.database_path)
-    research_mode = ledger.get_state("research_mode", "OBSERVATION")
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-        ledger.record_learning_observation(snapshot, decision, research_mode)
     displayed = investigated_scan_results(results, settings.scan_result_limit, settings.scan_qualified_score)
     summary = format_scan_summary(
         displayed,
@@ -365,7 +415,6 @@ def run_live_scan(settings: Settings) -> str:
         label = research_class(decision, settings.scan_qualified_score)
         message = (
             f"📌 RESULT {index}/{len(displayed)} — {label}\n"
-            f"Stage 15 mode: {research_mode}\n"
             + format_live_alert(snapshot, decision, settings.bot_display_name)
         )
         send_research_result(
@@ -387,16 +436,14 @@ def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
     if not results:
         return "Automatic scan completed: no valid candidates."
     ledger = Ledger(settings.database_path)
-    research_mode = ledger.get_state("research_mode", "OBSERVATION")
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
-        ledger.record_learning_observation(snapshot, decision, research_mode)
     best_snapshot, best_decision = results[0]
     if best_decision.status == "REJECTED" or best_decision.score < settings.auto_alert_min_score:
         return f"Automatic scan completed: best score {best_decision.score:.1f}; no alert."
     if ledger.recently_alerted(best_snapshot.mint, settings.auto_duplicate_cooldown_minutes, now):
         return f"Automatic scan completed: repeat alert suppressed for {best_snapshot.symbol}."
-    message = f"🕒 AUTOMATIC PEAK-TIME ALERT\nStage 15 mode: {research_mode}\n" + format_live_alert(
+    message = "🕒 AUTOMATIC PEAK-TIME ALERT\n" + format_live_alert(
         best_snapshot, best_decision, settings.bot_display_name
     )
     send_research_result(

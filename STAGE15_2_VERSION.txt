@@ -1,0 +1,18 @@
+DEGEN DETECTOR STAGE 15.2
+Build: Solana + Robinhood Chain Dual-Chain
+
+Included:
+- Beginner-first Telegram dashboard
+- Solana and Robinhood Chain CA selection
+- Practice-first quick/manual buy and sell controls
+- Adjustable simulated stop losses
+- Owner-only wallet-approved real trade routes
+- Solana Early Mooner Radar
+- Robinhood Chain market-first Early Radar
+
+Verification command:
+python -m unittest discover -s commander_bot/tests -v
+
+Expected result:
+Ran 39 tests
+OK
