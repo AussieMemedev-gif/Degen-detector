@@ -11,11 +11,12 @@ class SocialAlphaAgent:
 
     def analyse(self, token: TokenSnapshot) -> AgentReport:
         if not token.social_data_available:
-            return AgentReport(self.name, 0.0, "low", ["social/KOL feed not connected in Live Data V3"])
+            return AgentReport(self.name, 0.0, "low", ["no official social API evidence available"])
         score = min(token.social_mentions_15m / 5, 35)
         score += min(max(token.social_velocity_pct, 0) / 4, 35)
         score += min(token.trusted_kol_mentions * 10, 30)
-        reasons = [f"{token.social_mentions_15m} mentions/15m", f"social velocity {token.social_velocity_pct:.1f}%"]
+        coverage = ", ".join(token.social_sources) if token.social_sources else "connected feeds"
+        reasons = [f"{token.social_mentions_15m} recent item(s) via {coverage}", f"attention strength {token.social_velocity_pct:.1f}/100"]
         if token.trusted_kol_mentions:
             reasons.append(f"{token.trusted_kol_mentions} trusted KOL mention(s)")
         return AgentReport(self.name, clamp(score), "high" if score >= 75 else "medium", reasons)

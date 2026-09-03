@@ -1,4 +1,4 @@
-# Degen Detector MVP
+# Degen Detector Stage 16 — Master Paper Trading System
 
 **Detect the send before the trend.**
 
@@ -38,13 +38,19 @@ A safety-first Solana hidden-gem detector and paper-trading command centre. Four
 - Early Mooner Radar using holder count/distribution, age, liquidity, volume acceleration and buy pressure
 - Stage 15.2 Solana + Robinhood Chain network selection, dual-format CA search and chain-aware practice sizing
 - Robinhood Chain early market radar (chain 4663) plus owner-only Uniswap wallet-approved trade routes
+- Stage 16 simplified beginner dashboard with Check a Token, Meme Radar, Practice Auto-Trader,
+  Paper Portfolio, Learn & Safety, and a separate owner-only Master System Lab
+- Rule-based Master Paper Trader with confidence-aware sizing, hard stops, two profit checkpoints,
+  trailing exits, maximum-position protection, a daily fake-loss circuit breaker and decision audit log
+- Plain-English Trade / Watch-Skip / Avoid verdicts with good signs, risks and missing evidence
+- Optional official X recent-search and YouTube recent-video connectors; unavailable feeds fail closed
 
-## Stage 15 beginner dashboard
+## Stage 16 beginner dashboard
 
-The home screen is intentionally short. **Scan for Tokens** is the recommended starting point.
-**Discover** browses launchpads, **Practice** opens the fake-money terminal, **Trackers** monitors
-public wallets, and **Learn** explains scores and safety. Owner-only scheduling and system controls
-are kept under **Admin**, away from tester accounts and normal research flows.
+The home screen is intentionally short. **Check a Token** is the recommended starting point.
+**Meme Radar** searches and ranks candidates, **Practice Auto-Trader** explains and simulates a
+complete strategy, **My Paper Portfolio** reports results, and **Learn & Safety** teaches each term.
+Owner-only diagnostics, scheduling and emergency controls are kept in **Master System Lab**.
 
 The bot registers only five Telegram commands: `/start`, `/scan`, `/learn`, `/status`, and `/help`.
 All other features remain available through buttons, so beginners do not need to memorize commands.
@@ -71,7 +77,7 @@ Open **Practice Trade** for the manual training terminal. Every user starts with
 
 Every individual Research Scan result includes **Trade with Fake Money**, **Live Chart**, and **My Practice Profile** controls. The trade button binds the exact scanned mint to the requesting user's isolated practice terminal. Automatic alerts receive the same controls in the owner's private chat; group alerts remain read-only so another group member cannot operate somebody else's practice profile.
 
-Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Scan Now** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Social/KOL feeds and reliable sell simulation are not yet connected, and reports state that limitation.
+Set `HELIUS_API_KEY` and `LIVE_DATA_ENABLED=true` to make **Meme Radar** use real Solana candidates. Live mode remains paper-only. DEX Screener provides pair liquidity, transactions, volume, price and pool age; Helius verifies mint/freeze authority, supply and top-account concentration. Optional `X_BEARER_TOKEN` and `YOUTUBE_API_KEY` values activate official-API social evidence. TikTok, Instagram, Facebook and Reddit credential slots are staged but are not scored until their approved adapters are completed. Reports state the actual coverage and lower confidence when a source is missing or fails.
 
 Open **Launchpads / PF** from the main Telegram menu to filter current Solana discoveries by source. `Qualified 75+` uses `LAUNCHPAD_MIN_SCORE` (default 75). The initial sniper and bundle percentages are conservative screening heuristics with low confidence; they are not forensic proof. Developer lore/history is shown as unknown until creator-wallet attribution can be verified.
 

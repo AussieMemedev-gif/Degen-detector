@@ -1,0 +1,62 @@
+DEGEN DETECTOR STAGE 16 — SIMPLE INSTALL
+
+This ZIP is flat and is designed to be extracted directly inside the existing
+GitHub Codespace repository.
+
+1. Upload degen-detector-stage16-master-paper-trader.zip into the top level of
+   /workspaces/Degen-detector.
+
+2. In the Codespaces terminal, enter this complete command and press Enter:
+
+   unzip -o degen-detector-stage16-master-paper-trader.zip
+
+   If unzip asks whether to replace files, type A and press Enter.
+
+3. Run the automated checks:
+
+   python -m unittest discover -s commander_bot/tests -v
+
+   The expected result is: Ran 44 tests ... OK
+
+4. Save the upgrade to GitHub:
+
+   git add .
+   git commit -m "Upgrade Degen Detector to Stage 16 master paper trader"
+   git push
+
+5. In Railway, keep the Start Command as:
+
+   python -m commander_bot.main --controls
+
+6. Confirm these existing Railway variables are set:
+
+   TELEGRAM_BOT_TOKEN
+   TELEGRAM_OWNER_ID
+   HELIUS_API_KEY
+   LIVE_DATA_ENABLED=true
+   DATABASE_PATH=/data/commander_bot.db
+
+   Keep one Railway replica while SQLite is used.
+
+7. Optional social connectors:
+
+   X_BEARER_TOKEN=<official X API bearer token>
+   YOUTUBE_API_KEY=<official YouTube Data API key>
+
+   Do not add social tokens unless they were created for the official API.
+   Missing connectors are shown as missing and never treated as positive data.
+
+8. After Railway reports Deploy successful, open the private Telegram chat and
+   send /start. Open Master System Lab -> Data Health before enabling paper auto.
+
+9. To begin the automatic fake-money forward test, open:
+
+   Practice Auto-Trader -> Entry & Exit Rules -> Enable Paper Auto
+
+IMPORTANT
+
+- Do not paste the ZIP filename by itself into the terminal. A filename is not a
+  command; it must follow unzip -o as shown above.
+- Stage 16 cannot trade real money or access a wallet.
+- Never store seed phrases, private keys or recovery codes in Railway, GitHub,
+  Telegram or the project files.

@@ -54,7 +54,8 @@ def format_live_alert(token: TokenSnapshot, decision: CommanderDecision, display
         f"Estimated slippage: {token.estimated_slippage_pct:.2f}%",
         "",
         "🤖 SPECIALISTS",
-        f"Social: {decision.reports['social'].score:.1f}/100 (feed not connected)",
+        f"Social: {decision.reports['social'].score:.1f}/100 "
+        f"({'/'.join(token.social_sources) if token.social_sources else 'no official feed evidence'})",
         f"On-chain: {decision.reports['onchain'].score:.1f}/100",
         f"Chart: {decision.reports['chart'].score:.1f}/100",
         f"Risk: {decision.reports['risk'].score:.1f}/100",
@@ -121,36 +122,87 @@ def set_bot_commands(token: str) -> None:
 
 def control_keyboard() -> Dict[str, Any]:
     return {"inline_keyboard": [
-        [{"text": "🔍 Search Contract Address", "callback_data": "ca_search"}],
-        [{"text": "🔎 Scan for Tokens", "callback_data": "scan_hub"}],
-        [
-            {"text": "🚀 Discover", "callback_data": "launchpads"},
-            {"text": "🎮 Practice", "callback_data": "practice_dashboard"},
-        ],
-        [
-            {"text": "👛 Trackers", "callback_data": "wallet_tracker"},
-            {"text": "🎓 Learn", "callback_data": "learn_hub"},
-        ],
-        [
-            {"text": "📊 Status", "callback_data": "status"},
-            {"text": "🛠 Admin", "callback_data": "admin_hub"},
-        ],
+        [{"text": "🔎 Check a Token", "callback_data": "ca_search"}],
+        [{"text": "🚀 Meme Radar", "callback_data": "meme_radar"}],
+        [{"text": "🤖 Practice Auto-Trader", "callback_data": "auto_trader_hub"}],
+        [{"text": "💼 My Paper Portfolio", "callback_data": "portfolio_hub"}],
+        [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
+        [{"text": "📚 Learn & Safety", "callback_data": "learn_hub"}],
+        [{"text": "🧠 Master System Lab", "callback_data": "master_lab"}],
     ]}
 
 
 def tester_keyboard() -> Dict[str, Any]:
     return {"inline_keyboard": [
-        [{"text": "🔍 Search Contract Address", "callback_data": "ca_search"}],
-        [{"text": "🔎 Scan for Tokens", "callback_data": "scan_hub"}],
+        [{"text": "🔎 Check a Token", "callback_data": "ca_search"}],
+        [{"text": "🚀 Meme Radar", "callback_data": "meme_radar"}],
+        [{"text": "✨ New Launches", "callback_data": "launchpads"}],
+        [{"text": "🤖 Practice Auto-Trader", "callback_data": "auto_trader_hub"}],
+        [{"text": "💼 My Paper Portfolio", "callback_data": "portfolio_hub"}],
+        [{"text": "👛 Wallet / KOL Tracker", "callback_data": "wallet_tracker"}],
+        [{"text": "📚 Learn & Safety", "callback_data": "learn_hub"}],
+    ]}
+
+
+def meme_radar_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [{"text": "⭐ Best Meme Candidates", "callback_data": "scan_once"}],
         [
-            {"text": "🚀 Discover", "callback_data": "launchpads"},
-            {"text": "🎮 Practice", "callback_data": "practice_dashboard"},
+            {"text": "🔥 Trending Now", "callback_data": "leaderboard"},
+            {"text": "🌙 Early Movers", "callback_data": "early_mooners"},
         ],
         [
-            {"text": "👛 Trackers", "callback_data": "wallet_tracker"},
-            {"text": "🎓 Learn", "callback_data": "learn_hub"},
+            {"text": "🚀 New Launches", "callback_data": "launchpads"},
+            {"text": "👛 Wallet / KOL", "callback_data": "wallet_tracker"},
         ],
-        [{"text": "📊 My Status", "callback_data": "status"}],
+        [{"text": "📡 Source Coverage", "callback_data": "source_health"}],
+        [{"text": "🏠 Home", "callback_data": "main_menu"}],
+    ]}
+
+
+def auto_trader_keyboard(owner: bool = False) -> Dict[str, Any]:
+    rows = [
+        [{"text": "📊 Auto-Trader Status", "callback_data": "auto_status"}],
+        [{"text": "📋 Entry & Exit Rules", "callback_data": "auto_rules"}],
+        [{"text": "🧾 Why It Traded / Skipped", "callback_data": "auto_decisions"}],
+        [{"text": "📈 Strategy Performance", "callback_data": "auto_performance"}],
+    ]
+    if owner:
+        rows.insert(1, [
+            {"text": "✅ Enable Paper Auto", "callback_data": "paper_auto_on"},
+            {"text": "⏹ Disable", "callback_data": "paper_auto_off"},
+        ])
+    rows.append([{"text": "🏠 Home", "callback_data": "main_menu"}])
+    return {"inline_keyboard": rows}
+
+
+def portfolio_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "👛 Balance & Positions", "callback_data": "practice_wallet"},
+            {"text": "📊 Profit / Loss", "callback_data": "practice_pnl"},
+        ],
+        [
+            {"text": "📜 Trade History", "callback_data": "practice_history"},
+            {"text": "🏆 Best Trades", "callback_data": "practice_gains"},
+        ],
+        [{"text": "🎮 Manual Practice", "callback_data": "practice_dashboard"}],
+        [{"text": "🏠 Home", "callback_data": "main_menu"}],
+    ]}
+
+
+def master_lab_keyboard() -> Dict[str, Any]:
+    return {"inline_keyboard": [
+        [
+            {"text": "📡 Data Health", "callback_data": "source_health"},
+            {"text": "📈 Performance", "callback_data": "auto_performance"},
+        ],
+        [{"text": "🤖 Paper Auto-Trader", "callback_data": "auto_trader_hub"}],
+        [{"text": "🔎 Discovery Settings", "callback_data": "settings"}],
+        [{"text": "🕒 Scan Schedule", "callback_data": "admin_hub"}],
+        [{"text": "🚨 Emergency Stop", "callback_data": "emergency_ask"}],
+        [{"text": "🔒 Future Live Executor — Disabled", "callback_data": "live_disabled"}],
+        [{"text": "🏠 Home", "callback_data": "main_menu"}],
     ]}
 
 
@@ -184,9 +236,12 @@ def discover_keyboard() -> Dict[str, Any]:
 
 def learn_keyboard() -> Dict[str, Any]:
     return {"inline_keyboard": [
-        [{"text": "🚦 Understand Results", "callback_data": "score_guide"}],
+        [{"text": "🚀 Start Here", "callback_data": "quick_start"}],
+        [{"text": "🎯 Read a Trade Verdict", "callback_data": "score_guide"}],
+        [{"text": "👍 Good vs Bad Trade", "callback_data": "trade_setup_guide"}],
         [{"text": "🛡️ Safety Checklist", "callback_data": "safety_guide"}],
         [{"text": "🎮 Practice Walkthrough", "callback_data": "practice_guide"}],
+        [{"text": "📖 Plain-English Glossary", "callback_data": "glossary"}],
         [{"text": "📖 All Instructions", "callback_data": "help"}],
         [{"text": "⬅️ Home", "callback_data": "main_menu"}],
     ]}
@@ -204,7 +259,6 @@ def admin_keyboard(confirm: str = "") -> Dict[str, Any]:
             [{"text": "Cancel", "callback_data": "admin_hub"}],
         ]}
     return {"inline_keyboard": [
-        [{"text": "🔐 Owner Real Trade", "callback_data": "real_trade"}],
         [
             {"text": "▶️ Manual Session", "callback_data": "manual_on"},
             {"text": "⏹ Stop Scans", "callback_data": "stop"},
@@ -377,6 +431,30 @@ def send_tester_menu(token: str, chat_id: str, message: str) -> None:
         "chat_id": chat_id,
         "text": message,
         "reply_markup": tester_keyboard(),
+    })
+
+
+def send_meme_radar_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id, "text": message, "reply_markup": meme_radar_keyboard(),
+    })
+
+
+def send_auto_trader_menu(token: str, chat_id: str, message: str, owner: bool = False) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id, "text": message, "reply_markup": auto_trader_keyboard(owner),
+    })
+
+
+def send_portfolio_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id, "text": message, "reply_markup": portfolio_keyboard(),
+    })
+
+
+def send_master_lab_menu(token: str, chat_id: str, message: str) -> None:
+    telegram_request(token, "sendMessage", {
+        "chat_id": chat_id, "text": message, "reply_markup": master_lab_keyboard(),
     })
 
 

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 import time
 import urllib.parse
 import urllib.request
@@ -200,6 +201,16 @@ def analyse_candidates_with_diagnostics(
             continue
         try:
             snapshot = snapshot_from_pair(mint, pair, risk)
+            if settings.x_bearer_token or settings.youtube_api_key:
+                from .social_intelligence import collect_social_evidence
+                evidence = collect_social_evidence(snapshot.symbol, mint, settings)
+                snapshot = replace(
+                    snapshot,
+                    social_mentions_15m=evidence.mentions,
+                    social_velocity_pct=evidence.velocity_score,
+                    social_data_available=evidence.available,
+                    social_sources=evidence.sources,
+                )
             results.append((snapshot, commander.decide(snapshot)))
         except (OSError, ValueError, RuntimeError, KeyError, TypeError):
             diagnostics["Invalid market data"] = diagnostics.get("Invalid market data", 0) + 1
@@ -400,6 +411,8 @@ def run_live_scan(settings: Settings) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
+    from .master_trader import build_trade_plan, format_trade_plan, process_master_candidates
+    master_messages = process_master_candidates(results, ledger, settings)
     displayed = investigated_scan_results(results, settings.scan_result_limit, settings.scan_qualified_score)
     summary = format_scan_summary(
         displayed,
@@ -416,6 +429,8 @@ def run_live_scan(settings: Settings) -> str:
         message = (
             f"📌 RESULT {index}/{len(displayed)} — {label}\n"
             + format_live_alert(snapshot, decision, settings.bot_display_name)
+            + "\n\n"
+            + format_trade_plan(snapshot, decision, build_trade_plan(snapshot, decision, settings))
         )
         send_research_result(
             settings.telegram_token,
@@ -424,6 +439,8 @@ def run_live_scan(settings: Settings) -> str:
             snapshot.mint,
             snapshot.chart_url,
         )
+    for message in master_messages:
+        send_telegram(settings.telegram_token, settings.telegram_chat_id, message)
     return summary
 
 
@@ -438,13 +455,34 @@ def run_automatic_scan(settings: Settings, now: datetime | None = None) -> str:
     ledger = Ledger(settings.database_path)
     for snapshot, decision in results:
         ledger.record(snapshot, decision)
+    from .master_trader import process_master_candidates, update_master_positions
+    prices = {snapshot.mint: snapshot.price_usd for snapshot, _ in results}
+    for row in ledger.master_open_positions():
+        mint = row[1]
+        if mint in prices:
+            continue
+        try:
+            prices[mint] = float(best_pair(mint).get("priceUsd") or 0)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+            continue
+    master_messages = update_master_positions(ledger, prices, now)
+    master_messages.extend(process_master_candidates(results, ledger, settings))
+    for master_message in master_messages:
+        send_telegram(settings.telegram_token, settings.telegram_chat_id, master_message)
     best_snapshot, best_decision = results[0]
     if best_decision.status == "REJECTED" or best_decision.score < settings.auto_alert_min_score:
         return f"Automatic scan completed: best score {best_decision.score:.1f}; no alert."
     if ledger.recently_alerted(best_snapshot.mint, settings.auto_duplicate_cooldown_minutes, now):
         return f"Automatic scan completed: repeat alert suppressed for {best_snapshot.symbol}."
-    message = "🕒 AUTOMATIC PEAK-TIME ALERT\n" + format_live_alert(
-        best_snapshot, best_decision, settings.bot_display_name
+    from .master_trader import build_trade_plan, format_trade_plan
+    message = (
+        "🕒 AUTOMATIC RESEARCH ALERT\n"
+        + format_live_alert(best_snapshot, best_decision, settings.bot_display_name)
+        + "\n\n"
+        + format_trade_plan(
+            best_snapshot, best_decision,
+            build_trade_plan(best_snapshot, best_decision, settings),
+        )
     )
     send_research_result(
         settings.telegram_token,

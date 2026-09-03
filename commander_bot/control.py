@@ -8,7 +8,8 @@ from .access import TelegramAccess, user_database_path
 from .notifications import (
     answer_callback, delete_webhook, get_updates, set_bot_commands, send_admin_menu, send_control_menu,
     send_discover_menu, send_launchpad_menu, send_learn_menu, send_paper_copy_menu, send_practice_menu,
-    send_ca_chain_menu, send_real_trade_menu, send_scan_hub, send_settings_menu, send_telegram,
+    send_auto_trader_menu, send_ca_chain_menu, send_master_lab_menu, send_meme_radar_menu,
+    send_portfolio_menu, send_real_trade_menu, send_scan_hub, send_settings_menu, send_telegram,
     send_tester_menu, send_wallet_menu,
 )
 from .storage import Ledger
@@ -82,10 +83,11 @@ class BotController:
         return (
             f"🛰️ DEGEN DETECTOR\n\n"
             f"System: 🟢 Online\n"
-            f"Scan mode: {mode}\n"
-            f"Trading: 🧪 PAPER ONLY (practice funds)\n"
+            f"Research scanner: {mode}\n"
+            f"Master paper auto-trader: {self.ledger.get_state('master_paper_auto', 'OFF')}\n"
+            f"Trading: 🧪 PAPER ONLY / FAKE MONEY\n"
             f"Wallet access: 🔒 None{detail}{auto_detail}\n\n"
-            "Choose an option below. New here? Start with 🎓 Learn."
+            "Choose one simple option below. New here? Open 📚 Learn & Safety."
         )
 
     def tester_status_message(self) -> str:
@@ -128,6 +130,86 @@ class BotController:
             "🎓 BEGINNER LEARNING CENTRE\n\n"
             "Learn the traffic-light scores, check risks before acting, and practise with "
             "fake money. You never need to connect a wallet or share a private key."
+        )
+
+    def meme_radar_message(self) -> str:
+        return (
+            "🚀 MEME RADAR\n\n"
+            "Find and rank meme-token candidates using live DEX activity, Solana safety checks, "
+            "momentum, launch age and available social evidence. Every candidate is labelled "
+            "Trade, Watch/Skip or Avoid with plain-English reasons.\n\n"
+            "Missing sources lower confidence; the bot never invents a positive signal."
+        )
+
+    def auto_trader_message(self) -> str:
+        enabled = self.ledger.get_state("master_paper_auto", "OFF")
+        return (
+            "🤖 MASTER PRACTICE AUTO-TRADER\n\n"
+            f"Status: {enabled}\n"
+            f"Entry score: {self.settings.master_entry_score:.0f}/100+\n"
+            f"Minimum data confidence: {self.settings.master_min_data_confidence:.0f}/100\n"
+            f"Maximum open positions: {self.settings.master_max_positions}\n"
+            f"Stop loss: -{self.settings.master_stop_loss_pct:.0f}%\n"
+            f"Profit checkpoints: +{self.settings.master_take_profit_1_pct:.0f}% / "
+            f"+{self.settings.master_take_profit_2_pct:.0f}%\n\n"
+            "It can open and close simulated positions during scheduled scans. It cannot access a "
+            "wallet, sign a transaction or trade real money."
+        )
+
+    def auto_rules_message(self) -> str:
+        return (
+            "📋 MASTER ENTRY & EXIT RULES\n\n"
+            "A paper entry requires: no safety veto, sufficient liquidity, observed sells, a strong "
+            "Commander score, adequate data confidence, constructive buy/sell pressure and momentum "
+            "that is rising without already being a vertical pump.\n\n"
+            "It skips falling momentum, weak evidence, thin liquidity, extreme spikes and duplicate "
+            "positions. It exits at the hard stop, second profit target, or a trailing stop after the "
+            "first target. Position size is reduced when confidence is lower and capped against liquidity."
+        )
+
+    def portfolio_message(self) -> str:
+        from .master_trader import performance_message
+        return performance_message(self.ledger) + "\n\nOpen Balance & Positions below for your manual practice account."
+
+    def master_lab_message(self) -> str:
+        return (
+            "🧠 MASTER SYSTEM LAB — OWNER ONLY\n\n"
+            "Monitor data coverage, the paper strategy, performance and scan schedule here. "
+            "The future funded-wallet executor is deliberately locked until forward testing shows "
+            "positive results after simulated fees and slippage."
+        )
+
+    def quick_start_message(self) -> str:
+        return (
+            "🚀 QUICK START — THREE SAFE STEPS\n\n"
+            "1. Tap 🔎 Check a Token and paste its complete contract address.\n"
+            "2. Read the verdict, good signs, risks and data-confidence score.\n"
+            "3. If you want to test the idea, use fake money only and review the result in My Paper Portfolio.\n\n"
+            "For discovery instead, open Meme Radar. Never send a seed phrase or private key."
+        )
+
+    def trade_setup_guide_message(self) -> str:
+        return (
+            "👍 GOOD SETUP VS BAD SETUP\n\n"
+            "A stronger setup has verified sell activity, usable liquidity, distributed holders, "
+            "revoked dangerous authorities, rising-but-not-explosive momentum and agreement across "
+            "several independent data sources.\n\n"
+            "A weak setup has thin liquidity, concentrated ownership, no sells, active mint/freeze "
+            "authority, a sudden vertical pump, collapsing volume, or mostly missing data. One green "
+            "signal never cancels a red safety warning."
+        )
+
+    def glossary_message(self) -> str:
+        return (
+            "📖 PLAIN-ENGLISH GLOSSARY\n\n"
+            "CA — the token's contract address.\n"
+            "Liquidity — money available for buying and selling; low liquidity makes exits harder.\n"
+            "Slippage — the difference between the expected and simulated fill price.\n"
+            "Holder concentration — how much supply the largest wallets control.\n"
+            "Momentum — how price and activity are changing.\n"
+            "KOL — a public account whose activity may influence attention.\n"
+            "Paper trade — a simulation using fake funds, never a blockchain transaction.\n"
+            "Data confidence — how much of the required evidence was actually available."
         )
 
     def score_guide_message(self) -> str:
@@ -201,15 +283,35 @@ class BotController:
         return self._practice().selected_chart
 
     def select_practice_token(self, mint: str, symbol: str = "") -> str:
+        from .practice_trading import split_asset
         from .wallet_tracker import valid_solana_address
-        if not valid_solana_address(mint):
+        chain, address = split_asset(mint)
+        if chain == "solana" and not valid_solana_address(address):
             return "That does not look like a valid Solana token mint."
+        if chain == "robinhood" and not (
+            address.startswith("0x") and len(address) == 42
+            and all(c in "0123456789abcdefABCDEF" for c in address[2:])
+        ):
+            return "That does not look like a valid Robinhood Chain contract address."
         practice = self._practice()
         try:
             selected = practice.select_token(mint, symbol)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError):
             return "⚠️ Live token data is unavailable. Nothing was selected."
-        return selected + "\n\n" + practice.terminal_message()
+        report = ""
+        if chain == "solana" and self.settings.live_data_enabled:
+            try:
+                from .live_data import analyse_candidates
+                from .master_trader import build_trade_plan, format_trade_plan
+                results = analyse_candidates(self.settings, [address])
+                if results:
+                    token, decision = results[0]
+                    report = "\n\n" + format_trade_plan(
+                        token, decision, build_trade_plan(token, decision, self.settings)
+                    )
+            except (OSError, RuntimeError, ValueError, KeyError, TypeError):
+                report = "\n\n⚠️ Full safety intelligence is temporarily unavailable; no positive verdict was assumed."
+        return selected + report + "\n\n" + practice.terminal_message()
 
     def handle_practice_action(self, action: str) -> str:
         practice = self._practice()
@@ -667,7 +769,8 @@ def run_control_bot(settings: Settings) -> None:
                 active = controller if role == "owner" else tester_controller(chat_id)
                 owner_only = {
                     "settings", "admin_hub", "manual_on", "stop", "automatic_ask", "automatic_confirm",
-                    "emergency_ask", "emergency_confirm", "real_trade",
+                    "emergency_ask", "emergency_confirm", "real_trade", "master_lab",
+                    "paper_auto_on", "paper_auto_off", "live_disabled",
                 }
                 if role != "owner" and (
                     action in owner_only or action.startswith(("interval_", "window_", "score_", "cooldown_"))
@@ -687,6 +790,52 @@ def run_control_bot(settings: Settings) -> None:
                         send_admin_menu(settings.telegram_token, chat_id, message_text)
                 elif action == "scan_hub":
                     send_scan_hub(settings.telegram_token, chat_id, active.scan_hub_message())
+                elif action == "meme_radar":
+                    send_meme_radar_menu(settings.telegram_token, chat_id, active.meme_radar_message())
+                elif action == "auto_trader_hub":
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, active.auto_trader_message(), role == "owner"
+                    )
+                elif action == "portfolio_hub":
+                    send_portfolio_menu(settings.telegram_token, chat_id, active.portfolio_message())
+                elif action == "master_lab":
+                    send_master_lab_menu(settings.telegram_token, chat_id, active.master_lab_message())
+                elif action == "source_health":
+                    from .master_trader import source_health_message
+                    send_meme_radar_menu(settings.telegram_token, chat_id, source_health_message(active.settings))
+                elif action == "auto_status":
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, active.auto_trader_message(), role == "owner"
+                    )
+                elif action == "auto_rules":
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, active.auto_rules_message(), role == "owner"
+                    )
+                elif action == "auto_decisions":
+                    from .master_trader import recent_decisions_message
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, recent_decisions_message(active.ledger), role == "owner"
+                    )
+                elif action == "auto_performance":
+                    from .master_trader import performance_message
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, performance_message(active.ledger), role == "owner"
+                    )
+                elif action in {"paper_auto_on", "paper_auto_off"}:
+                    enabled = action == "paper_auto_on"
+                    active.ledger.set_state("master_paper_auto", "ON" if enabled else "OFF")
+                    if enabled:
+                        active.handle("automatic")
+                    send_auto_trader_menu(
+                        settings.telegram_token, chat_id, active.auto_trader_message(), True
+                    )
+                elif action == "live_disabled":
+                    send_master_lab_menu(
+                        settings.telegram_token, chat_id,
+                        "🔒 LIVE EXECUTOR DISABLED\n\nNo funded wallet is connected and no real transaction can be signed. "
+                        "This remains locked until the paper strategy has a meaningful forward-test sample, "
+                        "positive expectancy after costs, independent security review and explicit owner setup."
+                    )
                 elif action == "robinhood_scan":
                     from .live_data import build_robinhood_meme_report
                     send_scan_hub(settings.telegram_token, chat_id, build_robinhood_meme_report(active.settings))
@@ -699,6 +848,12 @@ def run_control_bot(settings: Settings) -> None:
                     send_learn_menu(settings.telegram_token, chat_id, active.learn_message())
                 elif action == "score_guide":
                     send_learn_menu(settings.telegram_token, chat_id, active.score_guide_message())
+                elif action == "quick_start":
+                    send_learn_menu(settings.telegram_token, chat_id, active.quick_start_message())
+                elif action == "trade_setup_guide":
+                    send_learn_menu(settings.telegram_token, chat_id, active.trade_setup_guide_message())
+                elif action == "glossary":
+                    send_learn_menu(settings.telegram_token, chat_id, active.glossary_message())
                 elif action == "safety_guide":
                     send_learn_menu(settings.telegram_token, chat_id, active.safety_guide_message())
                 elif action == "practice_guide":

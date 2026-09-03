@@ -23,6 +23,10 @@ from commander_bot.launchpad_hub import identify_launchpad, _bundle_estimate, _s
 from commander_bot.access import TelegramAccess, parse_telegram_ids, user_database_path
 from commander_bot.notifications import tester_keyboard
 from commander_bot.practice_trading import PracticeTrading, asset_id, split_asset
+from commander_bot.master_trader import (
+    build_trade_plan, process_master_candidates, update_master_positions,
+)
+from commander_bot.social_intelligence import x_recent_evidence, youtube_recent_evidence
 
 
 class CommanderTests(unittest.TestCase):
@@ -498,6 +502,51 @@ class CommanderTests(unittest.TestCase):
         keyboard = real_trade_keyboard("0xabcdef0000000000000000000000000000000000", "robinhood")
         urls = [button.get("url", "") for row in keyboard["inline_keyboard"] for button in row]
         self.assertTrue(any("app.uniswap.org" in url and "outputCurrency" in url for url in urls))
+
+    def test_master_plan_explains_entry_and_never_claims_real_execution(self):
+        token = demo_candidate()
+        decision = self.commander.decide(token)
+        plan = build_trade_plan(token, decision, self.settings)
+        self.assertEqual(plan.action, "PAPER_BUY")
+        self.assertGreater(plan.position_usd, 0)
+        self.assertLessEqual(plan.position_usd, self.settings.paper_position_usd)
+
+    def test_master_plan_rejects_hard_risk_veto(self):
+        token = replace(demo_candidate(), sellable=False)
+        decision = self.commander.decide(token)
+        plan = build_trade_plan(token, decision, self.settings)
+        self.assertEqual(plan.action, "REJECT")
+        self.assertEqual(plan.position_usd, 0)
+
+    def test_master_paper_auto_opens_and_stop_closes_a_simulation(self):
+        ledger = Ledger(":memory:")
+        ledger.set_state("master_paper_auto", "ON")
+        token = demo_candidate()
+        decision = self.commander.decide(token)
+        messages = process_master_candidates([(token, decision)], ledger, self.settings)
+        self.assertEqual(len(ledger.master_open_positions()), 1)
+        self.assertIn("No wallet transaction", messages[0])
+        entry = ledger.master_open_positions()[0][4]
+        exits = update_master_positions(ledger, {token.mint: entry * 0.5})
+        self.assertEqual(len(ledger.master_open_positions()), 0)
+        self.assertIn("hard stop loss", exits[0])
+
+    @patch("commander_bot.social_intelligence._json_request")
+    def test_x_social_connector_uses_official_metrics(self, request):
+        request.return_value = {"data": [{"public_metrics": {
+            "like_count": 3, "reply_count": 1, "retweet_count": 2, "quote_count": 1,
+        }}]}
+        evidence = x_recent_evidence("MEME", "mint", "token")
+        self.assertEqual(evidence.mentions, 1)
+        self.assertEqual(evidence.engagement, 7)
+        self.assertEqual(evidence.sources, ("X",))
+
+    @patch("commander_bot.social_intelligence._json_request")
+    def test_youtube_social_connector_counts_recent_results(self, request):
+        request.return_value = {"items": [{"id": 1}, {"id": 2}]}
+        evidence = youtube_recent_evidence("MEME", "mint", "key")
+        self.assertEqual(evidence.mentions, 2)
+        self.assertEqual(evidence.sources, ("YouTube",))
 
 
 if __name__ == "__main__":

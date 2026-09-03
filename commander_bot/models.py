@@ -28,6 +28,7 @@ class TokenSnapshot:
     chart_url: str = ""
     dex_id: str = ""
     holder_count: int = 0
+    social_sources: tuple[str, ...] = ()
     observed_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

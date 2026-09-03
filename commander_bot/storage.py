@@ -41,6 +41,19 @@ class Ledger:
             symbol TEXT NOT NULL, side TEXT NOT NULL, token_quantity REAL NOT NULL,
             fill_price_usd REAL NOT NULL, gross_usd REAL NOT NULL, fee_usd REAL NOT NULL,
             realized_pnl_usd REAL NOT NULL DEFAULT 0, sol_size REAL NOT NULL DEFAULT 0)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS master_trade_decisions (
+            id INTEGER PRIMARY KEY, observed_at TEXT NOT NULL, mint TEXT NOT NULL,
+            symbol TEXT NOT NULL, action TEXT NOT NULL, verdict TEXT NOT NULL,
+            commander_score REAL NOT NULL, data_confidence REAL NOT NULL,
+            reasons_json TEXT NOT NULL)""")
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS master_paper_positions (
+            id INTEGER PRIMARY KEY, mint TEXT NOT NULL, symbol TEXT NOT NULL,
+            opened_at TEXT NOT NULL, closed_at TEXT NOT NULL DEFAULT '',
+            entry_price REAL NOT NULL, current_price REAL NOT NULL,
+            high_price REAL NOT NULL, quantity REAL NOT NULL, position_usd REAL NOT NULL,
+            stop_price REAL NOT NULL, target_one REAL NOT NULL, target_two REAL NOT NULL,
+            trailing_stop_pct REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN',
+            exit_reason TEXT NOT NULL DEFAULT '', realized_pnl_usd REAL NOT NULL DEFAULT 0)""")
         self.connection.commit()
 
     def record(self, token: TokenSnapshot, decision: CommanderDecision) -> None:
@@ -66,6 +79,104 @@ class Ledger:
             (key, value),
         )
         self.connection.commit()
+
+    def record_master_decision(
+        self, observed_at: datetime, mint: str, symbol: str, action: str,
+        verdict: str, commander_score: float, data_confidence: float, reasons: list[str],
+    ) -> None:
+        self.connection.execute(
+            "INSERT INTO master_trade_decisions(observed_at,mint,symbol,action,verdict,"
+            "commander_score,data_confidence,reasons_json) VALUES(?,?,?,?,?,?,?,?)",
+            (observed_at.astimezone(timezone.utc).isoformat(), mint, symbol, action, verdict,
+             commander_score, data_confidence, json.dumps(reasons)),
+        )
+        self.connection.commit()
+
+    def recent_master_decisions(self, limit: int = 10) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT observed_at,symbol,action,verdict,commander_score,data_confidence,reasons_json "
+            "FROM master_trade_decisions ORDER BY id DESC LIMIT ?", (limit,),
+        ).fetchall()
+
+    def open_master_position(
+        self, token: TokenSnapshot, position_usd: float, stop_price: float,
+        target_one: float, target_two: float, trailing_stop_pct: float,
+    ) -> bool:
+        if token.price_usd <= 0 or position_usd <= 0:
+            return False
+        exists = self.connection.execute(
+            "SELECT id FROM master_paper_positions WHERE mint=? AND status='OPEN'", (token.mint,)
+        ).fetchone()
+        if exists:
+            return False
+        self.connection.execute(
+            "INSERT INTO master_paper_positions(mint,symbol,opened_at,entry_price,current_price,"
+            "high_price,quantity,position_usd,stop_price,target_one,target_two,trailing_stop_pct) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (token.mint, token.symbol, token.observed_at.astimezone(timezone.utc).isoformat(),
+             token.price_usd, token.price_usd, token.price_usd, position_usd / token.price_usd,
+             position_usd, stop_price, target_one, target_two, trailing_stop_pct),
+        )
+        self.connection.commit()
+        return True
+
+    def master_open_positions(self) -> list[tuple]:
+        return self.connection.execute(
+            "SELECT id,mint,symbol,opened_at,entry_price,current_price,high_price,quantity,"
+            "position_usd,stop_price,target_one,target_two,trailing_stop_pct "
+            "FROM master_paper_positions WHERE status='OPEN' ORDER BY opened_at"
+        ).fetchall()
+
+    def mark_master_price(self, position_id: int, price: float) -> None:
+        self.connection.execute(
+            "UPDATE master_paper_positions SET current_price=?,high_price=MAX(high_price,?) WHERE id=?",
+            (price, price, position_id),
+        )
+        self.connection.commit()
+
+    def close_master_position(
+        self, position_id: int, exit_price: float, reason: str, closed_at: datetime,
+    ) -> float:
+        row = self.connection.execute(
+            "SELECT quantity,position_usd FROM master_paper_positions WHERE id=? AND status='OPEN'",
+            (position_id,),
+        ).fetchone()
+        if not row:
+            return 0.0
+        pnl = float(row[0]) * exit_price - float(row[1])
+        self.connection.execute(
+            "UPDATE master_paper_positions SET current_price=?,closed_at=?,status='CLOSED',"
+            "exit_reason=?,realized_pnl_usd=? WHERE id=?",
+            (exit_price, closed_at.astimezone(timezone.utc).isoformat(), reason, pnl, position_id),
+        )
+        self.connection.commit()
+        return pnl
+
+    def master_performance(self) -> dict:
+        closed = self.connection.execute(
+            "SELECT position_usd,realized_pnl_usd FROM master_paper_positions WHERE status='CLOSED'"
+        ).fetchall()
+        open_count = int(self.connection.execute(
+            "SELECT COUNT(*) FROM master_paper_positions WHERE status='OPEN'"
+        ).fetchone()[0])
+        pnl = sum(float(row[1]) for row in closed)
+        wins = sum(1 for row in closed if float(row[1]) > 0)
+        losses = [float(row[1]) for row in closed if float(row[1]) <= 0]
+        gains = [float(row[1]) for row in closed if float(row[1]) > 0]
+        return {
+            "closed": len(closed), "open": open_count, "wins": wins, "pnl": pnl,
+            "win_rate": wins / len(closed) * 100 if closed else 0.0,
+            "average_win": sum(gains) / len(gains) if gains else 0.0,
+            "average_loss": sum(losses) / len(losses) if losses else 0.0,
+        }
+
+    def master_realized_pnl_since(self, since: datetime) -> float:
+        rows = self.connection.execute(
+            "SELECT realized_pnl_usd FROM master_paper_positions "
+            "WHERE status='CLOSED' AND closed_at>=?",
+            (since.astimezone(timezone.utc).isoformat(),),
+        ).fetchall()
+        return sum(float(row[0]) for row in rows)
 
     def recently_alerted(self, mint: str, cooldown_minutes: int, now: datetime) -> bool:
         row = self.connection.execute(
